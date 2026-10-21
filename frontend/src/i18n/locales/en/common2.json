@@ -287,8 +287,15 @@
       "clearTitle": "Clear all captured samples",
       "clear": "Clear",
       "noChannels": "No channels added.",
-      "noChannelsHint": "Click \"+ Add Channel\" to monitor a pin.",
-      "removeChannel": "Remove {{label}}"
+      "noChannelsHint": "Click \"+ Add Channel\" to monitor a pin, or turn on \"Probe\" and click a wire or pin.",
+      "removeChannel": "Remove {{label}}",
+      "probe": "Probe",
+      "probeTitle": "Click a wire or pin to add that node to the scope",
+      "probeBanner": "Click a wire or pin to add it to the scope",
+      "voltsDiv": "V/div:",
+      "analogTitle": "Voltage",
+      "analogEmpty": "No voltage on this net yet",
+      "analogDc": "DC"
     },
     "componentProps": {
       "close": "Close",
@@ -316,6 +323,7 @@
       "delete": "Delete",
       "deselect": "Deselect",
       "changeColor": "Change color",
+      "probe": "Scope",
       "deleteKind": {
         "wire": "Delete wire",
         "component": "Delete component",

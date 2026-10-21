@@ -33,6 +33,8 @@ interface SelectionActionBarProps {
   onDeselect: () => void;
   onColorChange?: (color: string) => void;
   currentColor?: string;
+  /** Attach the selected wire to the oscilloscope. */
+  onProbe?: () => void;
 }
 
 const ICON_SIZE = 16;
@@ -131,6 +133,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
   onDeselect,
   onColorChange,
   currentColor,
+  onProbe,
 }) => {
   const { t } = useTranslation();
   const [showPalette, setShowPalette] = React.useState(false);
@@ -139,6 +142,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
   const rotateRef = useRef<HTMLButtonElement | null>(null);
   const deselectRef = useRef<HTMLButtonElement | null>(null);
   const colorToggleRef = useRef<HTMLButtonElement | null>(null);
+  const probeRef = useRef<HTMLButtonElement | null>(null);
 
   // Reset the palette when the selection kind or colour-change handler changes
   // (i.e. the user switched from one wire to another, or deselected).
@@ -168,6 +172,7 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
   useTouchSafeAction(rotateRef, onRotate ?? noop);
   useTouchSafeAction(deselectRef, onDeselect);
   useTouchSafeAction(colorToggleRef, () => setShowPalette(!showPalette));
+  useTouchSafeAction(probeRef, onProbe ?? noop);
 
   if (!kind) return null;
 
@@ -268,6 +273,21 @@ export const SelectionActionBar: React.FC<SelectionActionBarProps> = ({
             </div>
           )}
         </div>
+      )}
+
+      {onProbe && (
+        <button
+          type="button"
+          ref={probeRef}
+          onClick={onProbe}
+          style={buttonStyle}
+          title={t('editor.selectionBar.probe')}
+          aria-label={t('editor.selectionBar.probe')}
+        >
+          <span className="selection-action-bar__label" style={buttonLabelStyle}>
+            {t('editor.selectionBar.probe')}
+          </span>
+        </button>
       )}
 
       {canRotate && onRotate && (

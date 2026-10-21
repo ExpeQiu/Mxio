@@ -83,6 +83,7 @@ import { webFlashAvailable, webFlashMpyAvailable } from '../../lib/proWebFlash';
 import { isEsp32Family } from '../../types/boardOptions';
 import { BoardOptionsModal } from './BoardOptionsModal';
 import { useOscilloscopeStore } from '../../store/useOscilloscopeStore';
+import { probePin, probeWire } from '../../simulation/scopeProbe';
 import { useMotion3dStore } from '../../store/useMotion3dStore';
 import { useProjectStore } from '../../store/useProjectStore';
 import { hasVapChat, hasVapVision } from '@apps/registry';
@@ -250,6 +251,7 @@ export const SimulatorCanvas = ({ headerSlot }: SimulatorCanvasProps = {}) => {
   // Oscilloscope
   const oscilloscopeOpen = useOscilloscopeStore((s) => s.open);
   const toggleOscilloscope = useOscilloscopeStore((s) => s.toggleOscilloscope);
+  const probeArmed = useOscilloscopeStore((s) => s.probeArmed);
   const motion3dOpen = useMotion3dStore((s) => s.open);
   const toggleMotion3d = useMotion3dStore((s) => s.toggle);
   const currentExampleId = useProjectStore((s) => s.currentExampleId);
@@ -1213,6 +1215,19 @@ export const SimulatorCanvas = ({ headerSlot }: SimulatorCanvasProps = {}) => {
           }
         }
         return;
+      }
+
+      // Probe mode: a tap on a wire attaches that net, including while the
+      // simulation is running (wire editing stays locked).
+      if (isShortTap && useOscilloscopeStore.getState().probeArmed) {
+        const world = toWorld(changed.clientX, changed.clientY);
+        const baseThreshold = isTouchDeviceRef.current ? 20 : 8;
+        const threshold = baseThreshold / zoomRef.current;
+        const wire = findWireNearPoint(wiresRef.current, world.x, world.y, threshold);
+        if (wire) {
+          probeWire(wire);
+          return;
+        }
       }
 
       // ── Short tap on empty canvas: wire selection + double-tap inserts waypoint ──
@@ -2201,6 +2216,12 @@ export const SimulatorCanvas = ({ headerSlot }: SimulatorCanvasProps = {}) => {
 
   // Wire creation via pin clicks
   const handlePinClick = (componentId: string, pinName: string, x: number, y: number) => {
+    // Probe mode takes the pin instead of starting a wire, and it stays
+    // available while the simulation runs.
+    if (useOscilloscopeStore.getState().probeArmed) {
+      probePin(componentId, pinName);
+      return;
+    }
     // No making connections while the simulation runs — interact-only.
     if (interactionRunningRef.current) return;
     // Close property dialog when starting wire creation
@@ -3075,6 +3096,7 @@ export const SimulatorCanvas = ({ headerSlot }: SimulatorCanvasProps = {}) => {
         <div
           ref={canvasRef}
           className="canvas-content"
+          style={probeArmed ? { cursor: 'crosshair' } : undefined}
           onMouseDown={handleCanvasMouseDown}
           onMouseMove={handleCanvasMouseMove}
           onMouseUp={handleCanvasMouseUp}
@@ -3121,6 +3143,17 @@ export const SimulatorCanvas = ({ headerSlot }: SimulatorCanvasProps = {}) => {
             if (wireSelectJustHandledRef.current) {
               wireSelectJustHandledRef.current = false;
               return;
+            }
+            // Probe mode attaches the wire under the cursor, including while
+            // the simulation is running.
+            if (probeArmed) {
+              const world = toWorld(e.clientX, e.clientY);
+              const threshold = 8 / zoomRef.current;
+              const wire = findWireNearPoint(wiresRef.current, world.x, world.y, threshold);
+              if (wire) {
+                probeWire(wire);
+                return;
+              }
             }
             // While the simulation runs the canvas is interact-only: a click on
             // a button must press it (its own handler), not select the wire
@@ -3275,6 +3308,12 @@ export const SimulatorCanvas = ({ headerSlot }: SimulatorCanvasProps = {}) => {
               onCancel={() => cancelWireCreation()}
             />
           )}
+          {probeArmed && !wireInProgress && (
+            <WireModeBanner
+              message={t('editor.oscilloscope.probeBanner')}
+              onCancel={() => useOscilloscopeStore.getState().setProbeArmed(false)}
+            />
+          )}
 
           {/* Floating action bar (top-center) for the current selection. Hidden
               while creating a wire (fights the wire-mode banner) and while the
@@ -3303,6 +3342,9 @@ export const SimulatorCanvas = ({ headerSlot }: SimulatorCanvasProps = {}) => {
                       // Recorded so the delete is also undoable.
                       recordRemoveWire(selectedWireId);
                       setSelectedWire(null);
+                    }}
+                    onProbe={() => {
+                      if (wire) probeWire(wire);
                     }}
                     onDeselect={() => setSelectedWire(null)}
                   />
@@ -3770,6 +3812,30 @@ export const SimulatorCanvas = ({ headerSlot }: SimulatorCanvasProps = {}) => {
                     />
                   ))}
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    probeWire(wire);
+                    setWireContextMenu(null);
+                  }}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 8,
+                    width: '100%',
+                    marginTop: 8,
+                    padding: '7px 6px',
+                    background: 'none',
+                    border: 'none',
+                    borderTop: '1px solid #3c3c3c',
+                    color: '#9cdcfe',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    textAlign: 'left',
+                  }}
+                >
+                  {t('editor.selectionBar.probe')}
+                </button>
                 <button
                   type="button"
                   onClick={() => {

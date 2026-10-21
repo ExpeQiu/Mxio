@@ -219,6 +219,31 @@
   height: 60px;
 }
 
+.osc-channel-row-analog {
+  height: 72px;
+}
+
+.osc-section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: #141414;
+  border-top: 1px solid #333;
+  border-bottom: 1px solid #222;
+  color: #9cdcfe;
+  font-size: 11px;
+}
+
+.osc-probe-msg {
+  color: #9cdcfe;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 420px;
+}
+
 .osc-channel-label {
   width: 72px;
   flex-shrink: 0;

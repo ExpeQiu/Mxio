@@ -285,8 +285,15 @@
       "clearTitle": "清除所有捕获的样本",
       "clear": "清除",
       "noChannels": "未添加通道。",
-      "noChannelsHint": "点击“+ 添加通道”以监视引脚。",
-      "removeChannel": "移除 {{label}}"
+      "noChannelsHint": "点击“+ 添加通道”监视引脚，或打开“点选探测”后点击连线、引脚。",
+      "removeChannel": "移除 {{label}}",
+      "probe": "点选探测",
+      "probeTitle": "点击连线或引脚，把该节点加入示波器",
+      "probeBanner": "点击连线或引脚，加入示波器",
+      "voltsDiv": "电压/格:",
+      "analogTitle": "电压",
+      "analogEmpty": "此网还没有电压",
+      "analogDc": "直流"
     },
     "componentProps": {
       "close": "关闭",
@@ -314,6 +321,7 @@
       "delete": "删除",
       "deselect": "取消选择",
       "changeColor": "更改颜色",
+      "probe": "示波器",
       "deleteKind": {
         "wire": "删除导线",
         "component": "删除元件",

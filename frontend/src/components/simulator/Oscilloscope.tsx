@@ -22,12 +22,17 @@ import {
   type TriggerEdge,
 } from '../../store/useOscilloscopeStore';
 import { useSimulatorStore } from '../../store/useSimulatorStore';
+import { useElectricalStore } from '../../store/useElectricalStore';
 import { boardDisplayName } from '../../types/board';
 import type { BoardKind } from '../../types/board';
+import { analogTraceForNet, formatVolts, type AnalogPoint } from '../../simulation/scopeProbe';
 import './Oscilloscope.css';
 
 // Horizontal divisions shown at once
 const NUM_DIVS = 10;
+
+/** Volts/div for the analog track. The channel spans two divisions above and below 0 V. */
+const VOLT_DIV_OPTIONS = [0.2, 0.5, 1, 2, 5];
 
 /** Time/div options shown in the selector */
 const TIME_DIV_OPTIONS: { label: string; ms: number }[] = [
@@ -217,6 +222,116 @@ function drawRuler(
   }
 }
 
+function formatSpiceTime(sec: number): string {
+  const abs = Math.abs(sec);
+  if (abs < 1e-6) return `${(sec * 1e9).toFixed(0)}ns`;
+  if (abs < 1e-3) return `${(sec * 1e6).toFixed(1)}µs`;
+  if (abs < 1) return `${(sec * 1e3).toFixed(2)}ms`;
+  return `${sec.toFixed(3)}s`;
+}
+
+/**
+ * Analog track. Time is the SPICE transient (not the MCU sample clock),
+ * stretched across the canvas. A DC level is one horizontal line.
+ * 0 V sits on the center line; one division is `voltsDiv`.
+ */
+function drawAnalogWaveform(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  points: AnalogPoint[],
+  color: string,
+  voltsDiv: number,
+  emptyLabel: string,
+): void {
+  ctx.clearRect(0, 0, width, height);
+
+  ctx.strokeStyle = '#1e1e1e';
+  ctx.lineWidth = 1;
+  for (let d = 0; d <= NUM_DIVS; d++) {
+    const x = Math.round((d / NUM_DIVS) * width);
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, height);
+    ctx.stroke();
+  }
+
+  const mid = height / 2;
+  ctx.strokeStyle = '#2a2a2a';
+  ctx.beginPath();
+  ctx.moveTo(0, mid);
+  ctx.lineTo(width, mid);
+  ctx.stroke();
+
+  if (points.length === 0) {
+    ctx.fillStyle = '#666';
+    ctx.font = '11px monospace';
+    ctx.fillText(emptyLabel, 8, mid);
+    return;
+  }
+
+  const fullScale = voltsDiv * 2;
+  const toY = (v: number) => {
+    const y = mid - (v / fullScale) * mid;
+    return Math.max(1, Math.min(height - 1, y));
+  };
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  if (points.length === 1) {
+    const y = toY(points[0].v);
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
+  } else {
+    const t0 = points[0].tSec;
+    const t1 = points[points.length - 1].tSec;
+    const span = t1 - t0 || 1;
+    points.forEach((p, i) => {
+      const x = ((p.tSec - t0) / span) * width;
+      if (i === 0) ctx.moveTo(x, toY(p.v));
+      else ctx.lineTo(x, toY(p.v));
+    });
+  }
+  ctx.stroke();
+
+  const last = points[points.length - 1].v;
+  ctx.fillStyle = color;
+  ctx.font = '9px monospace';
+  ctx.fillText(formatVolts(last), width - 42, Math.max(10, toY(last) - 3));
+}
+
+function drawAnalogRuler(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  points: AnalogPoint[],
+  dcLabel: string,
+): void {
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = '#888';
+  ctx.font = '9px monospace';
+
+  if (points.length < 2) {
+    ctx.fillText(dcLabel, 4, height - 4);
+    return;
+  }
+
+  const t0 = points[0].tSec;
+  const t1 = points[points.length - 1].tSec;
+  ctx.strokeStyle = '#444';
+  ctx.lineWidth = 1;
+  for (let d = 0; d <= NUM_DIVS; d++) {
+    const t = t0 + ((t1 - t0) * d) / NUM_DIVS;
+    const x = Math.round((d / NUM_DIVS) * width);
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, 5);
+    ctx.stroke();
+    if (d < NUM_DIVS) ctx.fillText(formatSpiceTime(t), x + 2, height - 3);
+  }
+}
+
 // ── Channel canvas ──────────────────────────────────────────────────────────
 
 interface ChannelCanvasProps {
@@ -287,6 +402,69 @@ const RulerCanvas: React.FC<RulerCanvasProps> = ({ windowEndMs, windowMs, timeDi
     if (ctx) ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
     drawRuler(canvas, windowEndMs, windowMs, timeDivMs);
   }, [windowEndMs, windowMs, timeDivMs]);
+
+  return (
+    <div ref={wrapRef} className="osc-ruler">
+      <canvas ref={canvasRef} className="osc-ruler-canvas" />
+    </div>
+  );
+};
+
+interface AnalogCanvasProps {
+  points: AnalogPoint[];
+  color: string;
+  voltsDiv: number;
+  emptyLabel: string;
+}
+
+const AnalogCanvas: React.FC<AnalogCanvasProps> = ({ points, color, voltsDiv, emptyLabel }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
+    const { width, height } = wrap.getBoundingClientRect();
+    const cssW = Math.floor(width);
+    const cssH = Math.floor(height);
+    if (cssW === 0 || cssH === 0) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = cssW * dpr;
+    canvas.height = cssH * dpr;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawAnalogWaveform(ctx, cssW, cssH, points, color, voltsDiv, emptyLabel);
+  }, [points, color, voltsDiv, emptyLabel]);
+
+  return (
+    <div ref={wrapRef} className="osc-channel-canvas-wrap">
+      <canvas ref={canvasRef} className="osc-channel-canvas" />
+    </div>
+  );
+};
+
+const AnalogRuler: React.FC<{ points: AnalogPoint[]; dcLabel: string }> = ({ points, dcLabel }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
+    const { width, height } = wrap.getBoundingClientRect();
+    const cssW = Math.floor(width);
+    const cssH = Math.floor(height);
+    if (cssW === 0 || cssH === 0) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = cssW * dpr;
+    canvas.height = cssH * dpr;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawAnalogRuler(ctx, cssW, cssH, points, dcLabel);
+  }, [points, dcLabel]);
 
   return (
     <div ref={wrapRef} className="osc-ruler">
@@ -387,10 +565,15 @@ export const Oscilloscope: React.FC = () => {
   const {
     running: capturing,
     timeDivMs,
+    voltsDiv,
+    probeArmed,
+    probeMessage,
     channels,
     samples,
     setCapturing,
     setTimeDivMs,
+    setVoltsDiv,
+    setProbeArmed,
     addChannel,
     removeChannel,
     clearSamples,
@@ -408,6 +591,10 @@ export const Oscilloscope: React.FC = () => {
 
   // Any board running → oscilloscope can capture
   const anyRunning = useSimulatorStore((s) => s.boards.some((b) => b.running));
+  const timeWaveforms = useElectricalStore((s) => s.timeWaveforms);
+  const nodeVoltages = useElectricalStore((s) => s.nodeVoltages);
+  const digitalChannels = channels.filter((c) => c.kind !== 'analog');
+  const analogChannels = channels.filter((c) => c.kind === 'analog');
 
   const [showPicker, setShowPicker] = useState(false);
   const [pickerAnchor, setPickerAnchor] = useState<DOMRect | null>(null);
@@ -471,7 +658,7 @@ export const Oscilloscope: React.FC = () => {
   if (triggerMode !== 'auto' && triggeredAtMs !== null) {
     windowEndMs = triggeredAtMs + (1 - triggerPosition) * windowMs;
   } else {
-    for (const ch of channels) {
+    for (const ch of digitalChannels) {
       const buf = samples[ch.id] ?? [];
       if (buf.length > 0) {
         windowEndMs = Math.max(windowEndMs, buf[buf.length - 1].timeMs);
@@ -514,6 +701,14 @@ export const Oscilloscope: React.FC = () => {
       {/* ── Header ── */}
       <div className="osc-header">
         <span className="osc-title">{t('editor.oscilloscope.title')}</span>
+
+        <button
+          className={`osc-btn${probeArmed ? ' osc-btn-active' : ''}`}
+          onClick={() => setProbeArmed(!probeArmed)}
+          title={t('editor.oscilloscope.probeTitle')}
+        >
+          {t('editor.oscilloscope.probe')}
+        </button>
 
         {/* Add Channel button + portal picker */}
         <button
@@ -582,12 +777,12 @@ export const Oscilloscope: React.FC = () => {
           <>
             <select
               className="osc-select"
-              value={triggerChannelId ?? channels[0]?.id ?? ''}
+              value={triggerChannelId ?? digitalChannels[0]?.id ?? ''}
               onChange={(e) => setTriggerChannel(e.target.value || null)}
               title="Trigger source"
-              disabled={channels.length <= 1}
+              disabled={digitalChannels.length <= 1}
             >
-              {channels.map((c) => (
+              {digitalChannels.map((c) => (
                 <option key={c.id} value={c.id}>
                   {boardShortName(c.boardId)}:{c.label}
                 </option>
@@ -635,6 +830,12 @@ export const Oscilloscope: React.FC = () => {
         >
           {t('editor.oscilloscope.clear')}
         </button>
+
+        {probeMessage && (
+          <span className="osc-probe-msg" title={probeMessage}>
+            {probeMessage}
+          </span>
+        )}
       </div>
 
       {/* ── Waveforms ── */}
@@ -644,39 +845,93 @@ export const Oscilloscope: React.FC = () => {
           <span style={{ color: '#777' }}>{t('editor.oscilloscope.noChannelsHint')}</span>
         </div>
       ) : (
-        <>
-          <div className="osc-waveforms">
-            {channels.map((ch) => (
-              <div key={ch.id} className="osc-channel-row">
-                <div className="osc-channel-label">
-                  <span className="osc-channel-board" title={ch.boardId}>
-                    {boardShortName(ch.boardId)}
-                  </span>
-                  <span className="osc-channel-name" style={{ color: ch.color }}>
-                    {ch.label}
-                  </span>
-                  <button
-                    className="osc-channel-remove"
-                    onClick={() => removeChannel(ch.id)}
-                    title={t('editor.oscilloscope.removeChannel', { label: ch.label })}
-                  >
-                    ×
-                  </button>
+        <div className="osc-waveforms">
+          {digitalChannels.length > 0 && (
+            <>
+              {digitalChannels.map((ch) => (
+                <div key={ch.id} className="osc-channel-row">
+                  <div className="osc-channel-label">
+                    <span className="osc-channel-board" title={ch.boardId}>
+                      {boardShortName(ch.boardId)}
+                    </span>
+                    <span className="osc-channel-name" style={{ color: ch.color }}>
+                      {ch.label}
+                    </span>
+                    <button
+                      className="osc-channel-remove"
+                      onClick={() => removeChannel(ch.id)}
+                      title={t('editor.oscilloscope.removeChannel', { label: ch.label })}
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <ChannelCanvas
+                    channel={ch}
+                    samples={samples[ch.id] ?? []}
+                    windowEndMs={windowEndMs}
+                    windowMs={windowMs}
+                    triggerXFrac={triggerXFrac}
+                  />
                 </div>
+              ))}
+              <RulerCanvas windowEndMs={windowEndMs} windowMs={windowMs} timeDivMs={timeDivMs} />
+            </>
+          )}
 
-                <ChannelCanvas
-                  channel={ch}
-                  samples={samples[ch.id] ?? []}
-                  windowEndMs={windowEndMs}
-                  windowMs={windowMs}
-                  triggerXFrac={triggerXFrac}
-                />
+          {analogChannels.length > 0 && (
+            <>
+              <div className="osc-section-label">
+                <span>{t('editor.oscilloscope.analogTitle')}</span>
+                <span className="osc-label">{t('editor.oscilloscope.voltsDiv')}</span>
+                <select
+                  className="osc-select"
+                  value={voltsDiv}
+                  onChange={(e) => setVoltsDiv(Number(e.target.value))}
+                >
+                  {VOLT_DIV_OPTIONS.map((v) => (
+                    <option key={v} value={v}>
+                      {v} V
+                    </option>
+                  ))}
+                </select>
               </div>
-            ))}
-          </div>
-
-          <RulerCanvas windowEndMs={windowEndMs} windowMs={windowMs} timeDivMs={timeDivMs} />
-        </>
+              {analogChannels.map((ch) => {
+                const trace = analogTraceForNet(ch.netName ?? '', timeWaveforms, nodeVoltages);
+                return (
+                  <div key={ch.id} className="osc-channel-row osc-channel-row-analog">
+                    <div className="osc-channel-label">
+                      <span className="osc-channel-board">V</span>
+                      <span className="osc-channel-name" style={{ color: ch.color }}>
+                        {ch.label}
+                      </span>
+                      <button
+                        className="osc-channel-remove"
+                        onClick={() => removeChannel(ch.id)}
+                        title={t('editor.oscilloscope.removeChannel', { label: ch.label })}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <AnalogCanvas
+                      points={trace.points}
+                      color={ch.color}
+                      voltsDiv={voltsDiv}
+                      emptyLabel={t('editor.oscilloscope.analogEmpty')}
+                    />
+                  </div>
+                );
+              })}
+              <AnalogRuler
+                points={analogChannels.reduce<AnalogPoint[]>((best, ch) => {
+                  const pts = analogTraceForNet(ch.netName ?? '', timeWaveforms, nodeVoltages).points;
+                  return pts.length > best.length ? pts : best;
+                }, [])}
+                dcLabel={t('editor.oscilloscope.analogDc')}
+              />
+            </>
+          )}
+        </div>
       )}
     </div>
   );

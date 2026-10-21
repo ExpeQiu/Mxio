@@ -47,11 +47,21 @@ export const CHANNEL_COLORS = [
 
 export interface OscChannel {
   id: string;
-  /** Board that owns this channel */
+  /**
+   * `digital` — MCU GPIO high/low, sampled from the simulator clock.
+   * `analog` — node voltage from the electrical solver. Its time axis is
+   * the SPICE transient, drawn on a separate track.
+   * Absent means digital (channels created before this field existed).
+   */
+  kind?: 'digital' | 'analog';
+  /** Board that owns a digital channel. Empty for an analog net. */
   boardId: string;
+  /** GPIO number. `-1` for an analog net. */
   pin: number;
   label: string;
   color: string;
+  /** SPICE net name for an analog channel (`n0`, `0`, `vcc_rail`, …). */
+  netName?: string;
 }
 
 export interface OscSample {
@@ -73,8 +83,14 @@ interface OscilloscopeState {
   timeDivMs: number;
   /** Channels currently monitored */
   channels: OscChannel[];
-  /** Circular sample buffers keyed by channel id */
+  /** Circular sample buffers keyed by channel id (digital channels only). */
   samples: Record<string, OscSample[]>;
+  /** Volts per vertical division on analog tracks. */
+  voltsDiv: number;
+  /** Canvas clicks on a wire or pin attach that node. */
+  probeArmed: boolean;
+  /** Last probe result, shown under the scope header. */
+  probeMessage: string;
 
   // ── Trigger ───────────────────────────────────────────────────────────────
   triggerMode: TriggerMode;
@@ -97,9 +113,14 @@ interface OscilloscopeState {
   // ── Actions ────────────────────────────────────────────────────────────────
 
   toggleOscilloscope: () => void;
+  setOpen: (open: boolean) => void;
   setCapturing: (running: boolean) => void;
   setTimeDivMs: (ms: number) => void;
+  setVoltsDiv: (volts: number) => void;
+  setProbeArmed: (armed: boolean) => void;
+  setProbeMessage: (message: string) => void;
   addChannel: (boardId: string, pin: number, pinLabel: string) => void;
+  addAnalogChannel: (netName: string, label: string) => void;
   removeChannel: (id: string) => void;
   /** Push one sample; drops the oldest if the buffer is full */
   pushSample: (channelId: string, timeMs: number, state: boolean) => void;
@@ -131,14 +152,19 @@ export function matchesTriggerEdge(prevState: boolean, newState: boolean, edge: 
  * hasn't explicitly picked one (or picked one that's since been removed),
  * fall back to the first channel — the most common single-channel case.
  */
+function digitalChannels(channels: OscChannel[]): OscChannel[] {
+  return channels.filter((c) => c.kind !== 'analog');
+}
+
 function resolveTriggerChannelId(
   triggerChannelId: string | null,
   channels: OscChannel[],
 ): string | null {
-  if (triggerChannelId && channels.some((c) => c.id === triggerChannelId)) {
+  const digital = digitalChannels(channels);
+  if (triggerChannelId && digital.some((c) => c.id === triggerChannelId)) {
     return triggerChannelId;
   }
-  return channels[0]?.id ?? null;
+  return digital[0]?.id ?? null;
 }
 
 export const useOscilloscopeStore = create<OscilloscopeState>((set, get) => ({
@@ -147,6 +173,9 @@ export const useOscilloscopeStore = create<OscilloscopeState>((set, get) => ({
   timeDivMs: 1,
   channels: [],
   samples: {},
+  voltsDiv: 1,
+  probeArmed: false,
+  probeMessage: '',
 
   triggerMode: 'auto',
   triggerChannelId: null,
@@ -157,21 +186,44 @@ export const useOscilloscopeStore = create<OscilloscopeState>((set, get) => ({
 
   toggleOscilloscope: () => set((s) => ({ open: !s.open })),
 
+  setOpen: (open) => set({ open }),
+
   setCapturing: (running) => set({ running }),
 
   setTimeDivMs: (ms) => set({ timeDivMs: ms }),
 
+  setVoltsDiv: (volts) => set({ voltsDiv: volts }),
+
+  setProbeArmed: (armed) => set({ probeArmed: armed }),
+
+  setProbeMessage: (message) => set({ probeMessage: message }),
+
   addChannel: (boardId: string, pin: number, pinLabel: string) => {
     const { channels } = get();
-    // Deduplicate by (boardId, pin)
-    if (channels.some((c) => c.boardId === boardId && c.pin === pin)) return;
+    // Deduplicate by (boardId, pin) among digital channels only.
+    if (channels.some((c) => c.kind !== 'analog' && c.boardId === boardId && c.pin === pin)) return;
 
     const id = `osc-ch-${boardId}-${pin}`;
     const color = CHANNEL_COLORS[channels.length % CHANNEL_COLORS.length];
 
     set((s) => ({
-      channels: [...s.channels, { id, boardId, pin, label: pinLabel, color }],
+      channels: [...s.channels, { id, boardId, pin, label: pinLabel, color, kind: 'digital' }],
       samples: { ...s.samples, [id]: [] },
+    }));
+  },
+
+  addAnalogChannel: (netName: string, label: string) => {
+    const { channels } = get();
+    if (channels.some((c) => c.kind === 'analog' && c.netName === netName)) return;
+
+    const id = `osc-net-${netName}`;
+    const color = CHANNEL_COLORS[channels.length % CHANNEL_COLORS.length];
+
+    set((s) => ({
+      channels: [
+        ...s.channels,
+        { id, boardId: '', pin: -1, label, color, kind: 'analog', netName },
+      ],
     }));
   },
 
