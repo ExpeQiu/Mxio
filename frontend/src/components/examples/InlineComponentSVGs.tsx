@@ -12,6 +12,7 @@
  * of the corresponding custom web component, so bounding boxes line up.
  */
 import React from 'react';
+import { TFT43_BODY_H, TFT43_BODY_W } from '../../simulation/displays/tft43Geom';
 
 interface InlineSVGProps {
   w: number;
@@ -562,4 +563,5 @@ export const INLINE_SVGS: Record<string, InlineEntry> = {
   'epaper-2in9-bwr':  { component: EPaperGlyph, w: 340, h: 180 },
   // ACeP 7-colour 5.65" — same FPC pinout, different palette.
   'epaper-5in65-7c':  { component: EPaperGlyph, w: 660, h: 520 },
+  'velxio-tft43': { component: EPaperGlyph, w: TFT43_BODY_W, h: TFT43_BODY_H },
 };

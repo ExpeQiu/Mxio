@@ -2632,6 +2632,19 @@
         "position",
         "tinygps"
       ]
+    },
+    {
+      "id": "tft43",
+      "tagName": "velxio-tft43",
+      "name": "4.3\" HD TFT (800×480)",
+      "category": "displays",
+      "description": "4.3 inch 800×480 IPS module on an RA8875 SPI controller. Wire VCC, GND, SCK, MOSI, MISO, CS, RST and BL; the glass shows the pixels the controller draws.",
+      "thumbnail": "<svg width='64' height='64' xmlns='http://www.w3.org/2000/svg'><rect width='64' height='64' fill='#1a2332' rx='4'/><rect x='6' y='8' width='52' height='36' rx='2' fill='#07111c' stroke='#334155'/><rect x='9' y='11' width='46' height='28' fill='#0b3a66'/><text x='32' y='28' text-anchor='middle' font-size='7' fill='#7dd3fc' font-family='monospace'>800x480</text><text x='32' y='56' text-anchor='middle' font-size='6' fill='#9ca3af' font-family='sans-serif'>4.3 HD</text></svg>",
+      "properties": [],
+      "defaultValues": {},
+      "pinCount": 8,
+      "pins": ["GND", "VCC", "SCK", "MOSI", "MISO", "CS", "RST", "BL"],
+      "tags": ["tft", "tft43", "ra8875", "display", "4.3", "800x480", "spi", "hd", "ips"]
     }
   ],
   "led": {

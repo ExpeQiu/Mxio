@@ -28,6 +28,7 @@ export const FALLBACK_PINS: Record<string, string[]> = {
   pushbutton: ['1.l', '1.r', '2.l', '2.r'],
   servo: ['PWM', 'V+', 'GND'],
   'ssd1306-i2c-4pin': ['GND', 'VCC', 'SCL', 'SDA'],
+  tft43: ['GND', 'VCC', 'SCK', 'MOSI', 'MISO', 'CS', 'RST', 'BL'],
   'hc-sr04': ['VCC', 'TRIG', 'ECHO', 'GND'],
   buzzer: ['1', '2'],
   'big-sound-sensor': ['VCC', 'GND', 'AOUT', 'DOUT'],

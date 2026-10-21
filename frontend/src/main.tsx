@@ -29,6 +29,7 @@ import './components/velxio-components/Bmp280Element';
 import './components/velxio-components/Ds3231Element';
 import './components/velxio-components/GpsNeo6mElement';
 import './components/velxio-components/EPaperElement';
+import './components/velxio-components/Tft43Element';
 import App from './App.tsx';
 
 // Configure monaco-editor for offline use via local static assets

@@ -25,6 +25,7 @@ import { analogExamples } from '../data/examples-analog';
 import { digitalExamples } from '../data/examples-digital';
 import { hundredDaysExamples } from '../data/examples-100-days';
 import { epaperExamples } from '../data/examples-displays-epaper';
+import { tft43Examples } from '../data/examples-tft43';
 import { circuitExamples } from '../data/examples-circuits';
 import {
   stripBrandPrefix,
@@ -61,6 +62,7 @@ const ALL_EXAMPLE_SOURCES = {
   digital: digitalExamples,
   '100-days': hundredDaysExamples,
   'epaper-displays': epaperExamples,
+  tft43: tft43Examples,
   circuits: circuitExamples,
 };
 

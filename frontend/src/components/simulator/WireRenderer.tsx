@@ -13,6 +13,8 @@ interface WireRendererProps {
   isHovered: boolean;
   /** Temporary waypoints used during drag preview */
   previewWaypoints?: { x: number; y: number }[];
+  /** Path with semicircular hops where this wire crosses another. */
+  jumpPath?: string;
   /** Override the full SVG path string (used during segment drag preview) */
   overridePath?: string;
 }
@@ -22,6 +24,7 @@ export const WireRenderer: React.FC<WireRendererProps> = ({
   isSelected,
   isHovered,
   previewWaypoints,
+  jumpPath,
   overridePath,
 }) => {
   // Breadboard seating wires are pure connectivity — the part visually
@@ -29,7 +32,7 @@ export const WireRenderer: React.FC<WireRendererProps> = ({
   if (wire.bb) return null;
 
   const waypoints = previewWaypoints ?? wire.waypoints;
-  const path = overridePath ?? generateOrthogonalPath(wire.start, waypoints, wire.end);
+  const path = overridePath ?? jumpPath ?? generateOrthogonalPath(wire.start, waypoints, wire.end);
 
   if (!path) return null;
 

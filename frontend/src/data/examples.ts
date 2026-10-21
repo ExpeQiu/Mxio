@@ -22,6 +22,7 @@ import { pi5ButtonLed } from './examples-pi5-button-led';
 import { esp32camAiArm } from './examples-esp32cam-ai-arm';
 import { esp32AiChat } from './examples-esp32-ai-chat';
 import { esp32SpeakerAgent } from './examples-esp32-speaker';
+import { tft43Examples } from './examples-tft43';
 
 /** Per-board setup for multi-board examples */
 export interface ExampleBoard {
@@ -11376,6 +11377,7 @@ export const exampleProjects: ExampleProject[] = [
   ...esp32MqttExamples,
   ...esp32s3TftExamples,
   ...jsemuChipExamples,
+  ...tft43Examples,
 ];
 
 // Get examples by category

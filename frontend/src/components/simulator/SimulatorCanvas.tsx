@@ -39,6 +39,7 @@ import { isBoardComponent, boardPinToNumber } from '../../utils/boardPinMapping'
 import { isBreadboard } from '../../utils/breadboardNets';
 import { pickDropSlot } from '../../utils/dropSlot';
 import { registerEditorCommand } from '../../lib/editorCommands';
+import { registerComponentPickerOpener } from '../../lib/componentPickerBridge';
 import {
   autoWireColor,
   railWireColor,
@@ -111,7 +112,7 @@ const ALIGN_SNAP_PX = 6;
  * `velxio-` element-name variants. Thin two-pin parts are deliberately absent.
  */
 const DISPLAY_BODY_METADATA_RE =
-  /(7segment|led-matrix|max7219|neopixel-matrix|ssd1306|oled|ili9341|lcd1602|lcd2004|led-ring)/i;
+  /(7segment|led-matrix|max7219|neopixel-matrix|ssd1306|oled|ili9341|lcd1602|lcd2004|led-ring|tft43)/i;
 
 /** Long-press duration for touch context menu (ms). */
 const LONG_PRESS_MS = 500;
@@ -269,6 +270,15 @@ export const SimulatorCanvas = ({ headerSlot }: SimulatorCanvasProps = {}) => {
   const [showComponentPicker, setShowComponentPicker] = useState(false);
   const [registry] = useState(() => ComponentRegistry.getInstance());
   const [registryLoaded, setRegistryLoaded] = useState(registry.isLoaded);
+
+  // EditorToolbar "添加" rings this — keep the modal next to canvas place handlers.
+  useEffect(() => {
+    registerComponentPickerOpener(() => {
+      if (running) return;
+      setShowComponentPicker(true);
+    });
+    return () => registerComponentPickerOpener(null);
+  }, [running]);
 
   // Wait for registry to finish loading before rendering components
   useEffect(() => {
@@ -2725,42 +2735,13 @@ export const SimulatorCanvas = ({ headerSlot }: SimulatorCanvasProps = {}) => {
           const headerJsx = (
             <div className={`canvas-header${headerSlot ? ' canvas-header--portaled' : ''}`}>
               <div className="canvas-header-left">
-                {/* Status LED */}
+                {/* Status LED — active board selector lives in EditorToolbar center slot */}
                 <span
                   className={`status-dot ${running ? 'running' : 'stopped'}`}
                   title={
                     running ? t('editor.canvas.status.running') : t('editor.canvas.status.stopped')
                   }
                 />
-
-                {/* Active board selector (multi-board) — hidden when no boards */}
-                {boards.length > 0 ? (
-                  <select
-                    className="board-selector"
-                    value={activeBoardId ?? ''}
-                    onChange={(e) => useSimulatorStore.getState().setActiveBoardId(e.target.value)}
-                    disabled={running}
-                    title={t('editor.canvas.activeBoard')}
-                  >
-                    {boards.map((b) => (
-                      <option key={b.id} value={b.id}>
-                        {boardDisplayName(b)}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <span
-                    className="board-selector"
-                    style={{ opacity: 0.55, fontStyle: 'italic', cursor: 'default' }}
-                    title={t('editor.canvas.noBoardHint')}
-                  >
-                    {t('editor.canvas.noBoard')}
-                  </span>
-                )}
-
-                {/* Overlay slot for board status next to the selector (e.g.
-                    which engine a run will use). Empty in the OSS build. */}
-                <span data-velxio-slot="board-status" />
 
                 {/* Undo / Redo moved to the Edit menu in the header
                     (Ctrl+Z / Ctrl+Y still work) — two fewer buttons in a
@@ -3040,55 +3021,7 @@ export const SimulatorCanvas = ({ headerSlot }: SimulatorCanvasProps = {}) => {
                 </button>
               </div>
 
-              <div className="canvas-header-right">
-                {/* Zoom moved to a floating cluster on the canvas'
-                    bottom-right corner — the header gets too tight when the
-                    AI chat panel is docked. */}
-
-                {/* Component count */}
-                <span
-                  className="component-count"
-                  title={t('editor.canvas.componentCount', { count: components.length })}
-                >
-                  <svg
-                    width="15"
-                    height="15"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <rect x="2" y="7" width="20" height="14" rx="2" />
-                    <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
-                  </svg>
-                  {components.length}
-                </span>
-
-                {/* Add Component */}
-                <button
-                  className="add-component-btn"
-                  onClick={() => setShowComponentPicker(true)}
-                  title={t('editor.canvas.addComponentTitle')}
-                  disabled={running}
-                >
-                  <svg
-                    width="22"
-                    height="22"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
-                  </svg>
-                  {t('editor.canvas.add')}
-                </button>
-              </div>
+              {/* Component count moved to EditorToolbar (right of Libraries). */}
             </div>
           );
           return headerSlot ? createPortal(headerJsx, headerSlot) : headerJsx;

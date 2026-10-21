@@ -50,6 +50,7 @@ import {
   routeAroundObstacles,
   collectComponentObstacles,
   collectComponentRects,
+  collectBoardRects,
   collectWireSegments,
 } from '../utils/wireAutoRoute';
 import { isBreadboard } from '../utils/breadboardNets';
@@ -3287,7 +3288,10 @@ export const useSimulatorStore = create<SimulatorState>((set, get) => {
             routedPreview = routeAroundObstacles(
               { x: wip.startEndpoint.x, y: wip.startEndpoint.y },
               { x, y },
-              collectComponentObstacles(state.components, [wip.startEndpoint.componentId]),
+              [
+                ...collectComponentObstacles(state.components, [wip.startEndpoint.componentId]),
+                ...collectBoardRects(state.boards).map((b) => b.rect),
+              ],
               collectWireSegments(state.wires),
             );
           }
@@ -3335,10 +3339,13 @@ export const useSimulatorStore = create<SimulatorState>((set, get) => {
         routed = routeAroundObstacles(
           { x: startEndpoint.x, y: startEndpoint.y },
           { x: endpoint.x, y: endpoint.y },
-          collectComponentObstacles(state.components, [
-            startEndpoint.componentId,
-            endpoint.componentId,
-          ]),
+          [
+            ...collectComponentObstacles(state.components, [
+              startEndpoint.componentId,
+              endpoint.componentId,
+            ]),
+            ...collectBoardRects(state.boards).map((b) => b.rect),
+          ],
           collectWireSegments(state.wires),
         );
       }
@@ -3488,12 +3495,19 @@ export const useSimulatorStore = create<SimulatorState>((set, get) => {
       // tidy side-by-side bus instead of a shuffle of overlaps.
       if (updatedWires.some((w) => w.autoRouted && !w.bb)) {
         const rectsById = collectComponentRects(state.components);
+        // Boards stay in the obstacle set even when a wire ends on them:
+        // carveEscape opens an outward corridor so routes leave the header
+        // instead of sliding down the pin column through every pad.
+        const boardRects = collectBoardRects(state.boards).map((b) => b.rect);
         for (let i = 0; i < updatedWires.length; i++) {
           const wire = updatedWires[i];
           if (!wire.autoRouted || wire.bb) continue;
-          const rects = rectsById
-            .filter((r) => r.id !== wire.start.componentId && r.id !== wire.end.componentId)
-            .map((r) => r.rect);
+          const rects = [
+            ...rectsById
+              .filter((r) => r.id !== wire.start.componentId && r.id !== wire.end.componentId)
+              .map((r) => r.rect),
+            ...boardRects,
+          ];
           const routed = routeAroundObstacles(
             { x: wire.start.x, y: wire.start.y },
             { x: wire.end.x, y: wire.end.y },

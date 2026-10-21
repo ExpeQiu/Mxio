@@ -5,6 +5,7 @@ import {
   searchLibraries,
   installLibrary,
   getInstalledLibraries,
+  getLibraryCatalog,
   getCustomLibraries,
   deleteCustomLibrary,
 } from '../../services/libraryService';
@@ -12,6 +13,11 @@ import type { ArduinoLibrary, InstalledLibrary } from '../../services/librarySer
 import { trackInstallLibrary } from '../../utils/analytics';
 import { useSimulatorStore } from '../../store/useSimulatorStore';
 import { boardDisplayName } from '../../types/board';
+import {
+  recommendLibrariesFromCircuit,
+  componentTypeLabel,
+} from '../../utils/componentLibraryHints';
+import { normalizeLibName } from '../../utils/libraryManifest';
 import './LibraryManagerModal.css';
 
 interface LibraryManagerModalProps {
@@ -33,7 +39,14 @@ interface LibRow {
   installed: boolean;
   custom: boolean;
   releases?: Record<string, unknown>;
+  /** Suggested from parts currently on the canvas */
+  recommended?: boolean;
+  /** Short labels of the parts that asked for this lib */
+  recommendFrom?: string;
 }
+
+/** Fixed row slot so the full index (~10k) can scroll without mounting every node. */
+const LIB_ROW_HEIGHT = 96;
 
 /**
  * Library Manager — ONE list, no tabs. Each row is state-aware:
@@ -53,15 +66,37 @@ export const LibraryManagerModal: React.FC<LibraryManagerModalProps> = ({ isOpen
   const boards = useSimulatorStore((s) => s.boards);
   const activeBoardId = useSimulatorStore((s) => s.activeBoardId);
   const updateBoard = useSimulatorStore((s) => s.updateBoard);
+  const components = useSimulatorStore((s) => s.components);
   const activeBoard = boards.find((b) => b.id === activeBoardId) ?? boards[0];
   const manifestLibs = activeBoard?.libraries ?? null;
   const declared = manifestLibs ?? [];
 
+  const circuitHints = useMemo(
+    () =>
+      recommendLibrariesFromCircuit(
+        components.map((c) => ({ metadataId: c.metadataId, type: (c as { type?: string }).type })),
+        activeBoard?.boardKind,
+      ),
+    [components, activeBoard?.boardKind],
+  );
+  const hintByNorm = useMemo(() => {
+    const map = new Map<string, { fromTypes: string[] }>();
+    for (const h of circuitHints) map.set(normalizeLibName(h.name), h);
+    return map;
+  }, [circuitHints]);
+
   const [searchQuery, setSearchQuery] = useState('');
+  const [onlyRecommended, setOnlyRecommended] = useState(false);
   const [searchResults, setSearchResults] = useState<ArduinoLibrary[]>([]);
+  const [catalog, setCatalog] = useState<ArduinoLibrary[] | null>(null);
+  // 'pending' until the first catalog attempt finishes — avoids flashing
+  // "none installed" while the ~10k-row index is still downloading.
+  const [catalogStatus, setCatalogStatus] = useState<'pending' | 'ready' | 'error'>('pending');
   const [installedLibraries, setInstalledLibraries] = useState<InstalledLibrary[]>([]);
   const [loadingSearch, setLoadingSearch] = useState(false);
-  const [loadingInstalled, setLoadingInstalled] = useState(false);
+  const [scrollTop, setScrollTop] = useState(0);
+  const [listHeight, setListHeight] = useState(480);
+  const listRef = useRef<HTMLDivElement | null>(null);
   const [busyLib, setBusyLib] = useState<string | null>(null); // install/uninstall in flight
   const [selectedVersions, setSelectedVersions] = useState<Record<string, string>>({});
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(
@@ -107,7 +142,6 @@ export const LibraryManagerModal: React.FC<LibraryManagerModalProps> = ({ isOpen
   );
 
   const fetchInstalled = useCallback(async () => {
-    setLoadingInstalled(true);
     try {
       // The shared index libs PLUS the user's per-user custom uploads (which
       // live in their per-user store). Custom first; de-duped by name.
@@ -122,8 +156,6 @@ export const LibraryManagerModal: React.FC<LibraryManagerModalProps> = ({ isOpen
         type: 'error',
         text: e instanceof Error ? e.message : 'Failed to load installed libraries',
       });
-    } finally {
-      setLoadingInstalled(false);
     }
   }, []);
 
@@ -132,14 +164,56 @@ export const LibraryManagerModal: React.FC<LibraryManagerModalProps> = ({ isOpen
     if (!isOpen) {
       setSearchQuery('');
       setSearchResults([]);
+      setOnlyRecommended(false);
       setStatusMsg(null);
     }
   }, [isOpen]);
 
-  // Load the installed/custom list whenever the modal opens.
+  // When the circuit yields new hints, default to showing them first (not
+  // filtered-only — user can still browse the full index).
   useEffect(() => {
-    if (isOpen) fetchInstalled();
-  }, [isOpen, fetchInstalled]);
+    if (isOpen && circuitHints.length) {
+      console.info('[library-manager] circuit filter ready', {
+        hints: circuitHints.length,
+        parts: components.map((c) => c.metadataId),
+      });
+    }
+  }, [isOpen, circuitHints, components]);
+
+  // Load the installed/custom list and the full index whenever the modal opens.
+  // The index is the default list; the search box filters it locally.
+  useEffect(() => {
+    if (!isOpen) return;
+    fetchInstalled();
+    let cancelled = false;
+    if (catalog) {
+      setCatalogStatus('ready');
+      return;
+    }
+    setCatalogStatus('pending');
+    getLibraryCatalog()
+      .then((libs) => {
+        // Always commit — Strict Mode may cancel the first effect while the
+        // shared inflight promise is still the source of truth for reopen.
+        setCatalog(libs);
+        setCatalogStatus('ready');
+        if (!cancelled) {
+          console.info('[library-manager] showing catalog', { count: libs.length });
+        }
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        setCatalog(null);
+        setCatalogStatus('error');
+        setStatusMsg({
+          type: 'error',
+          text: e instanceof Error ? e.message : 'Failed to load library catalog',
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, fetchInstalled, catalog]);
 
   // Escape closes it, like any dialog. The overlay already closes on a
   // backdrop click, but the toolbar button that OPENED this sits underneath
@@ -155,12 +229,12 @@ export const LibraryManagerModal: React.FC<LibraryManagerModalProps> = ({ isOpen
     return () => document.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
 
-  // Search the index (debounced). With an empty query we BROWSE the installed
-  // list instead, so don't fire a search.
+  // Remote search is only the fallback when the local index failed to load.
+  // With a catalog, the search box filters that list in the browser.
   useEffect(() => {
     if (!isOpen) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!searchQuery.trim()) {
+    if (catalog || !searchQuery.trim()) {
       setSearchResults([]);
       setLoadingSearch(false);
       return;
@@ -180,7 +254,7 @@ export const LibraryManagerModal: React.FC<LibraryManagerModalProps> = ({ isOpen
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [searchQuery, isOpen]);
+  }, [searchQuery, isOpen, catalog]);
 
   // A custom .zip upload (pro) lands in the user's per-user store; auto-declare
   // it on the active board and refresh the list. The upload BUTTON is injected
@@ -254,31 +328,158 @@ export const LibraryManagerModal: React.FC<LibraryManagerModalProps> = ({ isOpen
     [removeFromManifest, fetchInstalled],
   );
 
-  // ── unified rows: search results when typing, else the installed/custom list ─
-  const rows: LibRow[] = useMemo(() => {
-    if (searchQuery.trim()) {
-      return searchResults.map((lib) => ({
+  const annotateHint = useCallback(
+    (row: LibRow): LibRow => {
+      const hint = hintByNorm.get(normLib(row.name));
+      if (!hint) return row;
+      return {
+        ...row,
+        recommended: true,
+        recommendFrom: hint.fromTypes.map(componentTypeLabel).join(', '),
+      };
+    },
+    [hintByNorm],
+  );
+
+  const toRow = useCallback(
+    (lib: ArduinoLibrary, custom = false): LibRow =>
+      annotateHint({
         name: lib.name || 'Unknown',
         version: lib.latest?.version || lib.version || '',
         author: lib.latest?.author || lib.author || '',
         desc: lib.latest?.sentence || lib.sentence || '',
-        installed: isInstalled(lib.name || ''),
-        custom: false,
+        installed: custom || isInstalled(lib.name || ''),
+        custom,
         releases: lib.releases,
-      }));
+      }),
+    [isInstalled, annotateHint],
+  );
+
+  // Full index by default. Circuit-based recommendations float to the top.
+  // The search box filters name / author / sentence; "仅看推荐" narrows further.
+  const rows: LibRow[] = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const matches = (name: string, author: string, desc: string, category?: string) => {
+      if (!q) return true;
+      return `${name} ${author} ${desc} ${category || ''}`.toLowerCase().includes(q);
+    };
+
+    const sortRecommendedFirst = (list: LibRow[]) => {
+      const rec: LibRow[] = [];
+      const rest: LibRow[] = [];
+      for (const row of list) (row.recommended ? rec : rest).push(row);
+      return [...rec, ...rest];
+    };
+
+    const applyRecommendFilter = (list: LibRow[]) =>
+      onlyRecommended ? list.filter((r) => r.recommended) : list;
+
+    if (catalog) {
+      const seen = new Set<string>();
+      const fromIndex = catalog
+        .filter((lib) =>
+          matches(lib.name || '', lib.author || '', lib.sentence || '', lib.category),
+        )
+        .map((lib) => {
+          const row = toRow(lib);
+          seen.add(normLib(row.name));
+          return row;
+        });
+      const extras = installedLibraries
+        .filter((lib) => {
+          const name = lib.library?.name || lib.name || '';
+          return (
+            name &&
+            !seen.has(normLib(name)) &&
+            matches(
+              name,
+              lib.library?.author || lib.author || '',
+              lib.library?.sentence || lib.sentence || '',
+            )
+          );
+        })
+        .map((lib) =>
+          annotateHint({
+            name: lib.library?.name || lib.name || 'Unknown',
+            version: lib.library?.version || lib.version || '',
+            author: lib.library?.author || lib.author || '',
+            desc: lib.library?.sentence || lib.sentence || '',
+            installed: true,
+            custom: !!lib.custom,
+          }),
+        );
+
+      // Hints whose exact name is missing from the local index still appear
+      // so the user can try + Add (install will resolve via arduino-cli).
+      for (const hint of circuitHints) {
+        const n = normLib(hint.name);
+        if (seen.has(n)) continue;
+        if (!matches(hint.name, '', '', '')) continue;
+        extras.push(
+          annotateHint({
+            name: hint.name,
+            version: '',
+            author: '',
+            desc: '',
+            installed: isInstalled(hint.name),
+            custom: false,
+          }),
+        );
+        seen.add(n);
+      }
+
+      return applyRecommendFilter(sortRecommendedFirst([...extras, ...fromIndex]));
     }
-    return installedLibraries.map((lib) => ({
-      name: lib.library?.name || lib.name || 'Unknown',
-      version: lib.library?.version || lib.version || '',
-      author: lib.library?.author || lib.author || '',
-      desc: lib.library?.sentence || lib.sentence || '',
-      installed: true,
-      custom: !!lib.custom,
-    }));
-  }, [searchQuery, searchResults, installedLibraries, isInstalled]);
+
+    if (q) {
+      return applyRecommendFilter(sortRecommendedFirst(searchResults.map((lib) => toRow(lib))));
+    }
+    return applyRecommendFilter(
+      sortRecommendedFirst(
+        installedLibraries.map((lib) =>
+          annotateHint({
+            name: lib.library?.name || lib.name || 'Unknown',
+            version: lib.library?.version || lib.version || '',
+            author: lib.library?.author || lib.author || '',
+            desc: lib.library?.sentence || lib.sentence || '',
+            installed: true,
+            custom: !!lib.custom,
+          }),
+        ),
+      ),
+    );
+  }, [
+    searchQuery,
+    searchResults,
+    installedLibraries,
+    catalog,
+    toRow,
+    annotateHint,
+    onlyRecommended,
+    circuitHints,
+    isInstalled,
+  ]);
+
+  useEffect(() => {
+    if (listRef.current) listRef.current.scrollTop = 0;
+    setScrollTop(0);
+  }, [searchQuery, onlyRecommended]);
+
+  useEffect(() => {
+    const el = listRef.current;
+    if (!el || !isOpen) return;
+    const measure = () => setListHeight(el.clientHeight || 480);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [isOpen, catalogStatus]);
 
   if (!isOpen) return null;
-  const browsing = !searchQuery.trim();
+  const catalogLoading = catalogStatus === 'pending' && !catalog;
+  const rowStart = Math.max(0, Math.floor(scrollTop / LIB_ROW_HEIGHT) - 4);
+  const rowEnd = Math.min(rows.length, rowStart + Math.ceil(listHeight / LIB_ROW_HEIGHT) + 8);
+  const visibleRows = rows.slice(rowStart, rowEnd);
 
   // Portaled to <body>: the toolbar ancestor has container-type
   // (container queries), which turns it into the containing block for
@@ -349,44 +550,85 @@ export const LibraryManagerModal: React.FC<LibraryManagerModalProps> = ({ isOpen
             onChange={(e) => setSearchQuery(e.target.value)}
             autoFocus
           />
-          {loadingSearch && (
+          {loadingSearch || catalogLoading ? (
             <svg className="lib-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
               <path d="M21 12a9 9 0 1 1-6.219-8.56" />
             </svg>
+          ) : (
+            catalog && <span className="lib-catalog-count">{rows.length}</span>
           )}
         </div>
+
+        {circuitHints.length > 0 && (
+          <div className="lib-recommend-bar">
+            <button
+              type="button"
+              className={`lib-recommend-toggle${onlyRecommended ? ' active' : ''}`}
+              onClick={() => setOnlyRecommended((v) => !v)}
+              title={t('editor.libraryManager.recommendToggleTitle')}
+            >
+              {t('editor.libraryManager.recommendToggle', { count: circuitHints.length })}
+            </button>
+            <span className="lib-recommend-hint">
+              {t('editor.libraryManager.recommendHint', {
+                parts: [...new Set(circuitHints.flatMap((h) => h.fromTypes.map(componentTypeLabel)))].join(
+                  ', ',
+                ),
+              })}
+            </span>
+          </div>
+        )}
 
         {/* Status */}
         {statusMsg && <div className={`lib-status ${statusMsg.type}`}>{statusMsg.text}</div>}
 
         {/* Single unified list */}
         <div className="lib-content">
-          <div className="lib-list">
-            {browsing && loadingInstalled && (
+          <div
+            className="lib-list"
+            ref={listRef}
+            onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+          >
+            {catalogLoading ? (
               <div className="lib-empty">
-                <p>{t('editor.libraryManager.loadingInstalled')}</p>
+                <p>{t('editor.libraryManager.loadingLibraries')}</p>
               </div>
-            )}
-            {!loadingSearch && rows.length === 0 && !(browsing && loadingInstalled) && (
+            ) : !loadingSearch && rows.length === 0 ? (
               <div className="lib-empty">
                 <p>
-                  {browsing
-                    ? t('editor.libraryManager.noneInstalled')
-                    : searchQuery
-                      ? t('editor.libraryManager.noResultsFor', { query: searchQuery })
-                      : t('editor.libraryManager.noResults')}
+                  {searchQuery
+                    ? t('editor.libraryManager.noResultsFor', { query: searchQuery })
+                    : catalog
+                      ? t('editor.libraryManager.noResults')
+                      : t('editor.libraryManager.noneInstalled')}
                 </p>
-                {browsing && <p className="lib-empty-sub">Search above to find and add a library.</p>}
               </div>
-            )}
-            {rows.map((row, i) => {
+            ) : (
+            <div className="lib-list-spacer" style={{ height: rows.length * LIB_ROW_HEIGHT }}>
+            <div className="lib-list-window" style={{ top: rowStart * LIB_ROW_HEIGHT }}>
+            {visibleRows.map((row) => {
               const inProj = inManifest(row.name);
               const busy = busyLib === row.name;
               return (
-                <div key={`${row.name}-${i}`} className="lib-item">
+                <div key={row.name} className="lib-item">
                   <div className="lib-item-info">
                     <div className="lib-item-header">
                       <span className="lib-item-name">{row.name}</span>
+                      {row.recommended && (
+                        <span
+                          className="lib-recommend-badge"
+                          title={
+                            row.recommendFrom
+                              ? t('editor.libraryManager.recommendBadgeTitle', {
+                                  parts: row.recommendFrom,
+                                })
+                              : undefined
+                          }
+                        >
+                          {t('editor.libraryManager.recommendBadge')}
+                          {row.recommendFrom ? ` · ${row.recommendFrom}` : ''}
+                        </span>
+                      )}
                       {row.custom && (
                         <span
                           style={{
@@ -460,6 +702,9 @@ export const LibraryManagerModal: React.FC<LibraryManagerModalProps> = ({ isOpen
                 </div>
               );
             })}
+            </div>
+            </div>
+            )}
           </div>
         </div>
       </div>

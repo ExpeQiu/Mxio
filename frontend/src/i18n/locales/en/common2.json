@@ -219,9 +219,9 @@
       "title": "LIBRARY MANAGER",
       "searchTab": "Search",
       "installedTab": "Installed",
-      "filterPlaceholder": "Filter your search...",
+      "filterPlaceholder": "Filter by name, author, or description",
       "searchingFor": "Searching \"{{query}}\"…",
-      "loadingLibraries": "Loading libraries…",
+      "loadingLibraries": "Loading full library index…",
       "noResults": "No libraries available",
       "noResultsFor": "No libraries found for \"{{query}}\"",
       "byAuthor": "by {{author}}",
@@ -230,8 +230,13 @@
       "uninstall": "UNINSTALL",
       "uninstalling": "Uninstalling...",
       "loadingInstalled": "Loading installed libraries...",
-      "noneInstalled": "No libraries installed yet.",
-      "useSearchTab": "Use the Search tab to install libraries."
+      "noneInstalled": "Library index not loaded. Check the backend and retry, or search above.",
+      "useSearchTab": "Use the Search tab to install libraries.",
+      "recommendToggle": "Circuit · {{count}}",
+      "recommendToggleTitle": "Show only libraries suggested by parts on the canvas",
+      "recommendHint": "From: {{parts}}",
+      "recommendBadge": "Suggested",
+      "recommendBadgeTitle": "Commonly used with {{parts}} on the canvas"
     },
     "installLibs": {
       "title": "REQUIRED LIBRARIES",

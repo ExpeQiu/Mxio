@@ -39,6 +39,7 @@ import {
   trackResetSimulation,
   trackOpenLibraryManager,
 } from '../../utils/analytics';
+import { openComponentPicker } from '../../lib/componentPickerBridge';
 import './EditorToolbar.css';
 
 /**
@@ -183,6 +184,7 @@ export const EditorToolbar = ({
     running,
     compiledHex,
   } = useSimulatorStore();
+  const componentCount = useSimulatorStore((s) => s.components.length);
 
   const activeBoard = boards.find((b) => b.id === activeBoardId) ?? boards[0];
   const currentProject = useProjectStore((s) => s.currentProject);
@@ -1421,6 +1423,27 @@ export const EditorToolbar = ({
             </select>
           )}
 
+          {/* Output Console — left of Compile / Run group */}
+          <button
+            onClick={() => setConsoleOpen((v) => !v)}
+            className={`tb-btn tb-btn-output${consoleOpen ? ' tb-btn-output-active' : ''}`}
+            title={t('editor.toolbar.toggleConsole')}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="4 17 10 11 4 5" />
+              <line x1="12" y1="19" x2="20" y2="19" />
+            </svg>
+          </button>
+
           <div className="toolbar-group">
             {/* Compile */}
             <button
@@ -1665,10 +1688,36 @@ export const EditorToolbar = ({
             )}
           </div>
 
-          {/* Center slot — a flexible spacer that keeps the right action group
-              pinned to the far right. Rendered unconditionally so the layout
-              holds even when no overlay supplies content here. */}
-          <div className="toolbar-center-slot">{centerSlot}</div>
+          {/* Center slot — active board selector + optional overlay content.
+              Keeps the right action group pinned while giving the board
+              picker a stable home between Compile and Libraries. */}
+          <div className="toolbar-center-slot">
+            {boards.length > 0 ? (
+              <select
+                className="board-selector tb-board-selector"
+                value={activeBoardId ?? ''}
+                onChange={(e) => useSimulatorStore.getState().setActiveBoardId(e.target.value)}
+                disabled={running || anyBoardRunning}
+                title={t('editor.canvas.activeBoard')}
+              >
+                {boards.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {boardDisplayName(b)}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span
+                className="board-selector tb-board-selector"
+                style={{ opacity: 0.55, fontStyle: 'italic', cursor: 'default' }}
+                title={t('editor.canvas.noBoardHint')}
+              >
+                {t('editor.canvas.noBoard')}
+              </span>
+            )}
+            <span data-velxio-slot="board-status" />
+            {centerSlot}
+          </div>
 
           <div className="toolbar-group toolbar-group-right">
             {/* Hidden file input for project import. Accepts both .vlx
@@ -1689,6 +1738,30 @@ export const EditorToolbar = ({
               style={{ display: 'none' }}
               onChange={handleFirmwareUpload}
             />
+
+            {/* Add component — left of Libraries; modal opens via canvas bridge */}
+            <button
+              type="button"
+              className="tb-btn-add-component"
+              onClick={() => openComponentPicker()}
+              title={t('editor.canvas.addComponentTitle')}
+              disabled={running || anyBoardRunning}
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              <span className="tb-add-component-label">{t('editor.canvas.add')}</span>
+            </button>
 
             {/* Library Manager — always visible with label */}
             <button
@@ -1716,28 +1789,13 @@ export const EditorToolbar = ({
               <span className="tb-libraries-label">{t('editor.toolbar.libraries.label')}</span>
             </button>
 
-            {/* Import / Export moved to the File menu in the header — the
-                hidden input above stays because the File-menu command
-                clicks it through the editorCommands registry. */}
-            {/* Overflow "More" menu — collects the secondary actions
-                (BOM, Schematic image, Upload firmware) so the toolbar no
-                longer overflows on narrow widths.  The two Pro items show
-                a small "PRO" pill in the menu so users know they're
-                premium BEFORE clicking, instead of being surprised by an
-                upgrade prompt. */}
-            {/* The "..." menu is gone: every item it held now lives in the
-                File menu (with PRO pills where they apply). */}
-            <div className="tb-divider" />
-
-            {/* Output Console toggle */}
-            <button
-              onClick={() => setConsoleOpen((v) => !v)}
-              className={`tb-btn tb-btn-output${consoleOpen ? ' tb-btn-output-active' : ''}`}
-              title={t('editor.toolbar.toggleConsole')}
+            <span
+              className="component-count tb-component-count"
+              title={t('editor.canvas.componentCount', { count: componentCount })}
             >
               <svg
-                width="18"
-                height="18"
+                width="15"
+                height="15"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
@@ -1745,10 +1803,17 @@ export const EditorToolbar = ({
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
-                <polyline points="4 17 10 11 4 5" />
-                <line x1="12" y1="19" x2="20" y2="19" />
+                <rect x="2" y="7" width="20" height="14" rx="2" />
+                <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
               </svg>
-            </button>
+              {componentCount}
+            </span>
+
+            {/* Import / Export moved to the File menu in the header — the
+                hidden input above stays because the File-menu command
+                clicks it through the editorCommands registry. */}
+            {/* The "..." menu is gone: every item it held now lives in the
+                File menu (with PRO pills where they apply). */}
             {rightSlot}
           </div>
         </div>

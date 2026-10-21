@@ -217,9 +217,9 @@
       "title": "库管理器",
       "searchTab": "搜索",
       "installedTab": "已安装",
-      "filterPlaceholder": "筛选您的搜索...",
+      "filterPlaceholder": "筛选名称、作者或说明",
       "searchingFor": "正在搜索 \"{{query}}\"…",
-      "loadingLibraries": "加载库中…",
+      "loadingLibraries": "正在加载全部库…",
       "noResults": "没有可用的库",
       "noResultsFor": "未找到 \"{{query}}\" 的库",
       "byAuthor": "作者 {{author}}",
@@ -228,8 +228,13 @@
       "uninstall": "卸载",
       "uninstalling": "卸载中...",
       "loadingInstalled": "加载已安装的库...",
-      "noneInstalled": "尚未安装任何库。",
-      "useSearchTab": "使用“搜索”选项卡安装库。"
+      "noneInstalled": "库索引未加载。请检查后端后重试，或在上方搜索。",
+      "useSearchTab": "使用“搜索”选项卡安装库。",
+      "recommendToggle": "电路推荐 · {{count}}",
+      "recommendToggleTitle": "只显示与当前画布元件相关的库",
+      "recommendHint": "来自：{{parts}}",
+      "recommendBadge": "推荐",
+      "recommendBadgeTitle": "画布上的 {{parts}} 常用此库"
     },
     "installLibs": {
       "title": "必需的库",

@@ -54,6 +54,7 @@ export const COMPONENT_RATINGS: Record<string, ComponentRating> = {
     gndPins: ['GND'],
   },
   ili9341: { label: 'ILI9341 display', supplyPins: [{ name: 'VCC', absMaxVoltage: 6 }], gndPins: ['GND'] },
+  tft43: { label: '4.3" HD TFT', supplyPins: [{ name: 'VCC', absMaxVoltage: 3.6 }], gndPins: ['GND'] },
   dht22: { label: 'DHT22 sensor', supplyPins: [{ name: 'VCC', absMaxVoltage: 6 }], gndPins: ['GND'] },
   dht11: { label: 'DHT11 sensor', supplyPins: [{ name: 'VCC', absMaxVoltage: 5.5 }], gndPins: ['GND'] },
   bmp280: { label: 'BMP280 sensor', supplyPins: [{ name: 'VCC', absMaxVoltage: 6 }], gndPins: ['GND'] },

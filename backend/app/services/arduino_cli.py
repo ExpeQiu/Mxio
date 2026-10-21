@@ -83,6 +83,49 @@ _NETWORK_MARKERS = (
 )
 
 
+def _version_key(version: str) -> tuple[int, ...]:
+    """Numeric prefix of a library version, so 1.10.0 sorts after 1.9.0."""
+    parts: list[int] = []
+    for piece in (version or "").split("."):
+        digits = ""
+        for ch in piece:
+            if ch.isdigit():
+                digits += ch
+            else:
+                break
+        if not digits:
+            break
+        parts.append(int(digits))
+    return tuple(parts) or (0,)
+
+
+def slim_library_index(entries: list) -> list[dict]:
+    """One row per library name, keeping the highest version.
+
+    The Arduino index lists every release (~50k rows). The library manager
+    shows the latest of each name and filters in the browser.
+    """
+    best: dict[str, dict] = {}
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("name") or "").strip()
+        if not name:
+            continue
+        version = str(entry.get("version") or "")
+        current = best.get(name)
+        if current is not None and _version_key(version) <= _version_key(str(current.get("version") or "")):
+            continue
+        best[name] = {
+            "name": name,
+            "version": version,
+            "author": entry.get("author") or "",
+            "sentence": entry.get("sentence") or "",
+            "category": entry.get("category") or "",
+        }
+    return sorted(best.values(), key=lambda item: item["name"].lower())
+
+
 def humanize_cli_error(raw: str | None, *, action: str = "run arduino-cli") -> str:
     """One readable sentence for an arduino-cli failure.
 
@@ -171,6 +214,8 @@ class ArduinoCLIService:
 
     def __init__(self, cli_path: str = "arduino-cli"):
         self.cli_path = cli_path
+        # (path, mtime, slim libraries). Avoid re-parsing the ~60MB index.
+        self._library_catalog_cache: tuple[str, float, list] | None = None
         self._ensure_board_urls()
         self._ensure_core_installed()
 
@@ -1168,6 +1213,44 @@ class ArduinoCLIService:
         except Exception as e:
             print(f"Exception listing libraries: {e}")
             return {"success": False, "error": str(e)}
+
+    def _load_library_catalog(self) -> list:
+        path = self._data_dir() / "library_index.json"
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"Arduino library index not found at {path}. "
+                "Run `arduino-cli lib update-index` and try again."
+            )
+        mtime = path.stat().st_mtime
+        cached = self._library_catalog_cache
+        if cached and cached[0] == str(path) and cached[1] == mtime:
+            logger.info("[libraries] catalog cache hit count=%d path=%s", len(cached[2]), path)
+            return cached[2]
+
+        size = path.stat().st_size
+        logger.info("[libraries] parsing library index path=%s bytes=%d", path, size)
+        import json
+        with path.open(encoding="utf-8") as handle:
+            payload = json.load(handle)
+        entries = payload.get("libraries") if isinstance(payload, dict) else None
+        if not isinstance(entries, list):
+            raise ValueError(f"Unexpected library index shape in {path}")
+        slim = slim_library_index(entries)
+        self._library_catalog_cache = (str(path), mtime, slim)
+        logger.info("[libraries] catalog ready unique=%d from_entries=%d path=%s", len(slim), len(entries), path)
+        return slim
+
+    async def list_library_catalog(self) -> dict:
+        """Latest version of every library in the local Arduino index."""
+        try:
+            libraries = await asyncio.to_thread(self._load_library_catalog)
+            return {"success": True, "libraries": libraries}
+        except FileNotFoundError as exc:
+            logger.warning("[libraries] catalog index missing: %s", exc)
+            return {"success": False, "error": str(exc), "libraries": []}
+        except Exception as exc:
+            logger.exception("[libraries] catalog load failed")
+            return {"success": False, "error": str(exc), "libraries": []}
 
     async def uninstall_library(self, library_name: str) -> dict:
         """

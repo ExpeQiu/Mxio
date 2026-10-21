@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useSimulatorStore } from '../../store/useSimulatorStore';
+import { orthogonalPolyline, pathWithCrossJumps } from '../../utils/wireUtils';
 import { WireRenderer } from './WireRenderer';
 import { WireInProgressRenderer } from './WireInProgressRenderer';
 import { useIsCoarsePointer } from '../../utils/useTouchDevice';
@@ -59,6 +60,19 @@ export const WireLayer: React.FC<WireLayerProps> = ({
   const wireInProgress = useSimulatorStore((s) => s.wireInProgress);
   const selectedWireId = useSimulatorStore((s) => s.selectedWireId);
   const isTouchDevice = useIsCoarsePointer();
+  const jumpPaths = useMemo(() => {
+    const drawn = wires.filter((w) => !w.bb);
+    const polys = drawn.map((w) => ({
+      id: w.id,
+      pts: orthogonalPolyline(w.start, w.waypoints, w.end),
+    }));
+    const paths = new Map<string, string>();
+    for (const item of polys) {
+      const foreign = polys.filter((other) => other.id !== item.id).map((other) => other.pts);
+      paths.set(item.id, pathWithCrossJumps(item.pts, foreign));
+    }
+    return paths;
+  }, [wires]);
 
   return (
     <svg
@@ -80,6 +94,7 @@ export const WireLayer: React.FC<WireLayerProps> = ({
           wire={wire}
           isSelected={wire.id === selectedWireId}
           isHovered={wire.id === hoveredWireId}
+          jumpPath={jumpPaths.get(wire.id)}
           overridePath={
             segmentDragPreview?.wireId === wire.id ? segmentDragPreview.overridePath : undefined
           }

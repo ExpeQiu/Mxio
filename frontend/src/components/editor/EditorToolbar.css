@@ -37,14 +37,21 @@
   gap: 4px;
 }
 
-/* Center slot — a flexible spacer between the left and right action groups
-   that keeps the right icons pinned to the far right. Normally empty. */
+/* Center slot — board selector + flexible spacer between left/right groups. */
 .toolbar-center-slot {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   overflow: hidden;
+  padding: 0 8px;
+}
+
+.toolbar-center-slot .tb-board-selector {
+  max-width: min(200px, 100%);
+  flex: 0 1 auto;
 }
 
 /* ── Divider ─────────────────────────────────────── */
@@ -118,6 +125,54 @@
   color: #ccc;
 }
 
+/* Add component — sits immediately left of Libraries */
+.tb-btn-add-component {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px 0 7px;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  background: var(--color-action-primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  white-space: nowrap;
+  transition:
+    background 0.15s,
+    color 0.15s;
+  flex-shrink: 0;
+  align-self: center;
+}
+.tb-btn-add-component:hover:not(:disabled) {
+  background: var(--color-action-primary-hover);
+  color: #fff;
+}
+.tb-btn-add-component:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.tb-add-component-label {
+  line-height: 1;
+}
+@container editor-toolbar (max-width: 360px) {
+  .tb-add-component-label {
+    display: none;
+  }
+  .tb-btn-add-component {
+    padding: 0 6px;
+  }
+}
+.unified-toolbar.unified-toolbar--compact .tb-add-component-label {
+  display: none;
+}
+.unified-toolbar.unified-toolbar--compact .tb-btn-add-component {
+  padding: 0 6px;
+}
+
 /* Libraries button (always visible, with label) */
 .tb-btn-libraries {
   display: flex;
@@ -183,6 +238,19 @@
 }
 .unified-toolbar.unified-toolbar--compact .tb-btn-libraries {
   padding: 0 6px;
+}
+
+.tb-component-count {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 6px;
+  font-size: 12px;
+  color: #888;
+  flex-shrink: 0;
+  align-self: center;
+  user-select: none;
 }
 @container unified-toolbar (max-width: 905px) {
   .tb-board-pill-label {

@@ -17,6 +17,7 @@ import './components/velxio-components/Bmp280Element';
 import './components/velxio-components/DiodeElements';
 import './components/velxio-components/Ds3231Element';
 import './components/velxio-components/EPaperElement';
+import './components/velxio-components/Tft43Element';
 import './components/velxio-components/Esp32Element';
 import './components/velxio-components/FlipFlopElements';
 import './components/velxio-components/GpsNeo6mElement';

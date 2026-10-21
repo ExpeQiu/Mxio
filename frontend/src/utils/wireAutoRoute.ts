@@ -24,6 +24,7 @@
  * two wires meeting on one pin necessarily touch there.
  */
 
+import { boardSizeOf } from './boardSizes';
 import { expandOrthogonalPoints, previewElbow, simplifyOrthogonalPath } from './wireUtils';
 
 export interface ObstacleRect {
@@ -441,9 +442,11 @@ export function routeAroundObstacles(
 /**
  * Bounding boxes of every component except the wire's own endpoints,
  * measured from the rendered DOM (store coordinates + element size).
- * Boards are deliberately NOT obstacles: pins live on both board edges
- * and detouring around a board produces absurd routes. Returns [] in
- * non-DOM environments (tests) and for unmounted components.
+ * Returns [] in non-DOM environments (tests) and for unmounted components.
+ *
+ * Boards are collected separately via {@link collectBoardRects}: pin headers
+ * sit on the board edges, and without the board body as an obstacle the
+ * default elbow runs straight down the header (through every pad).
  */
 export function collectComponentObstacles(
   components: Array<{ id: string; x: number; y: number }>,
@@ -453,6 +456,21 @@ export function collectComponentObstacles(
   return collectComponentRects(components)
     .filter((r) => !skip.has(r.id))
     .map((r) => r.rect);
+}
+
+/**
+ * Board PCB bodies as routing obstacles. Pins live on the edges; 
+ * `routeAroundObstacles` carves an outward escape corridor so the wire
+ * leaves the header first, then routes around the board instead of
+ * sliding along the pin column.
+ */
+export function collectBoardRects(
+  boards: Array<{ id: string; boardKind: string; x: number; y: number }>,
+): Array<{ id: string; rect: ObstacleRect }> {
+  return boards.map((b) => {
+    const s = boardSizeOf(b.boardKind);
+    return { id: b.id, rect: { x: b.x, y: b.y, w: s.w, h: s.h } };
+  });
 }
 
 /**

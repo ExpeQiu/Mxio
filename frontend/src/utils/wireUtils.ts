@@ -67,14 +67,18 @@ export function jumperColorForId(wireId: string): string {
   return WIRE_JUMPER_PALETTE[h % WIRE_JUMPER_PALETTE.length];
 }
 
+/** Ground wire color — slate, not pure black (black vanishes on dark canvas
+ * and reads as "through the pin header" when routed along a column). */
+export const GND_WIRE_COLOR = '#78716c';
+
 /**
  * Automatically determine wire color from the starting pin name.
- * GND → black, VCC/5V/3.3V/VBUS/VIN → red, everything else → green.
+ * GND → slate, VCC/5V/3.3V/VBUS/VIN → red, everything else → green.
  */
 export function autoWireColor(pinName: string): string {
   const lower = pinName.toLowerCase();
   if (lower.includes('gnd') || lower === 'ground' || lower === '-' || lower.startsWith('gnd')) {
-    return '#000000';
+    return GND_WIRE_COLOR;
   }
   if (
     lower.includes('vcc') ||
@@ -104,6 +108,9 @@ interface Point {
  * segments never overshoot.
  */
 export const WIRE_BEND_RADIUS = 7;
+
+/** Radius of the semicircle drawn where two wires cross without joining. */
+export const WIRE_JUMP_RADIUS = 8;
 
 /**
  * Expand a stored point chain into the rendered orthogonal polyline.
@@ -244,11 +251,16 @@ export function fuseMicroJogs(pts: Point[], eps: number = MICRO_JOG_EPS): Point[
  * Corners whose adjacent segments are too short to fit a visible arc fall
  * back to a hard corner.
  */
-export function roundedPathFromPoints(pts: Point[], radius: number = WIRE_BEND_RADIUS): string {
+export function roundedPathFromPoints(
+  pts: Point[],
+  radius: number = WIRE_BEND_RADIUS,
+  jumps?: Map<number, number[]>,
+): string {
   if (pts.length === 0) return '';
   if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`;
 
-  let d = `M ${pts[0].x} ${pts[0].y}`;
+  let pen = pts[0];
+  let d = `M ${pen.x} ${pen.y}`;
   for (let i = 1; i < pts.length - 1; i++) {
     const prev = pts[i - 1];
     const corner = pts[i];
@@ -257,18 +269,105 @@ export function roundedPathFromPoints(pts: Point[], radius: number = WIRE_BEND_R
     const outLen = Math.hypot(next.x - corner.x, next.y - corner.y);
     const r = Math.min(radius, inLen / 2, outLen / 2);
     if (r < 0.75 || inLen === 0 || outLen === 0) {
-      d += ` L ${corner.x} ${corner.y}`;
+      d += runWithJumps(pen, corner, jumps?.get(i - 1));
+      pen = corner;
       continue;
     }
     const inX = corner.x - ((corner.x - prev.x) / inLen) * r;
     const inY = corner.y - ((corner.y - prev.y) / inLen) * r;
     const outX = corner.x + ((next.x - corner.x) / outLen) * r;
     const outY = corner.y + ((next.y - corner.y) / outLen) * r;
-    d += ` L ${inX} ${inY} Q ${corner.x} ${corner.y} ${outX} ${outY}`;
+    d += runWithJumps(pen, { x: inX, y: inY }, jumps?.get(i - 1));
+    d += ` Q ${corner.x} ${corner.y} ${outX} ${outY}`;
+    pen = { x: outX, y: outY };
   }
   const last = pts[pts.length - 1];
-  d += ` L ${last.x} ${last.y}`;
+  d += runWithJumps(pen, last, jumps?.get(pts.length - 2));
   return d;
+}
+
+interface AxisSeg {
+  a: Point;
+  b: Point;
+}
+
+/**
+ * Horizontal runs hop over vertical runs with a semicircle. A T-junction
+ * (the crossing sits on either segment's end) is a real connection and
+ * stays flat.
+ */
+function jumpCenters(horizontal: AxisSeg, foreign: Point[][]): number[] {
+  // Endpoint margin: skip T-junctions and leave room for the arc itself.
+  // Bend clearance is handled when the rounded path shortens corner legs.
+  const margin = WIRE_JUMP_RADIUS + 2;
+  const y = horizontal.a.y;
+  const h0 = Math.min(horizontal.a.x, horizontal.b.x);
+  const h1 = Math.max(horizontal.a.x, horizontal.b.x);
+  if (h1 - h0 < margin * 2) return [];
+  const centers: number[] = [];
+  for (const poly of foreign) {
+    for (let i = 0; i < poly.length - 1; i++) {
+      const a = poly[i];
+      const b = poly[i + 1];
+      if (a.x !== b.x) continue;
+      const x = a.x;
+      const v0 = Math.min(a.y, b.y);
+      const v1 = Math.max(a.y, b.y);
+      if (x < h0 + margin || x > h1 - margin) continue;
+      if (y < v0 + margin || y > v1 - margin) continue;
+      centers.push(x);
+    }
+  }
+  return centers;
+}
+
+/** Straight run, with semicircular hops where this horizontal segment crosses another wire. */
+function runWithJumps(from: Point, to: Point, centers: number[] | undefined): string {
+  if (from.y !== to.y || !centers?.length) return ` L ${to.x} ${to.y}`;
+  const dir = to.x >= from.x ? 1 : -1;
+  const r = WIRE_JUMP_RADIUS;
+  const ordered = [...centers].sort((p, q) => dir * (p - q));
+  let cursor = from.x;
+  let d = '';
+  for (const c of ordered) {
+    const approach = c - dir * r;
+    const leave = c + dir * r;
+    if (dir * (approach - cursor) < 1) continue;
+    if (dir * (to.x - leave) < 1) continue;
+    // sweep=0 arcs "up" (smaller y) for both L→R and R→L in SVG y-down space.
+    d += ` L ${approach} ${from.y} A ${r} ${r} 0 0 0 ${leave} ${from.y}`;
+    cursor = leave;
+  }
+  d += ` L ${to.x} ${to.y}`;
+  return d;
+}
+
+/** Orthogonal polyline actually drawn for a wire. */
+export function orthogonalPolyline(
+  start: Point,
+  waypoints: Point[] | undefined,
+  end: Point,
+): Point[] {
+  return simplifyOrthogonalPath(
+    fuseMicroJogs(expandOrthogonalPoints([start, ...(waypoints ?? []), end])),
+  );
+}
+
+/**
+ * Same path as `generateOrthogonalPath`, plus a semicircle on each
+ * horizontal run where it crosses another wire in the middle.
+ */
+export function pathWithCrossJumps(pts: Point[], foreign: Point[][]): string {
+  if (pts.length < 2) return roundedPathFromPoints(pts);
+  const jumps = new Map<number, number[]>();
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    if (a.y !== b.y) continue;
+    const centers = jumpCenters({ a, b }, foreign);
+    if (centers.length) jumps.set(i, centers);
+  }
+  return roundedPathFromPoints(pts, WIRE_BEND_RADIUS, jumps);
 }
 
 /**

@@ -90,6 +90,24 @@ async def uninstall_library(request: UninstallLibraryRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/catalog", response_model=SearchResponse)
+async def library_catalog():
+    """
+    Every library in the local Arduino index, one row per name (latest version).
+
+    The library manager lists this on open and filters in the browser. Search
+    stays available when the index file is missing.
+    """
+    try:
+        result = await arduino_cli.list_library_catalog()
+        if not result["success"]:
+            raise HTTPException(status_code=500, detail=result.get("error", "Failed to load library catalog"))
+        return SearchResponse(success=True, libraries=result.get("libraries", []))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/list", response_model=SearchResponse)
 async def list_libraries():
     """

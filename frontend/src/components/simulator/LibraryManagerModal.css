@@ -187,6 +187,48 @@
   color: #555;
 }
 
+.lib-recommend-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 18px;
+  border-bottom: 1px solid #2a2a2a;
+  background: #141a12;
+  flex-wrap: wrap;
+}
+
+.lib-recommend-toggle {
+  border: 1px solid #2e7d32;
+  background: #1b3a1e;
+  color: #a5d6a7;
+  border-radius: 14px;
+  padding: 3px 12px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lib-recommend-toggle:hover,
+.lib-recommend-toggle.active {
+  background: #2e7d32;
+  color: #e8f5e9;
+}
+
+.lib-recommend-hint {
+  font-size: 11px;
+  color: #7a8a7a;
+}
+
+.lib-recommend-badge {
+  font-size: 10px;
+  color: #c8e6c9;
+  background: #1b3a1e;
+  border: 1px solid #2e7d32;
+  border-radius: 6px;
+  padding: 0 6px;
+  white-space: nowrap;
+}
+
 .lib-spinner {
   width: 16px;
   height: 16px;
@@ -250,12 +292,31 @@
 }
 
 /* Library item */
+.lib-catalog-count {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #666;
+}
+
+.lib-list-spacer {
+  position: relative;
+}
+
+.lib-list-window {
+  position: absolute;
+  left: 0;
+  right: 0;
+}
+
 .lib-item {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
-  padding: 14px 18px;
+  height: 96px;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding: 10px 18px;
   border-bottom: 1px solid #1f1f1f;
   transition: background 0.1s;
 }

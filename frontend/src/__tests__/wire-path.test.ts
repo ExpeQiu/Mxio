@@ -13,6 +13,9 @@ import {
   generatePreviewPath,
   previewElbow,
   normalizeWireWaypoints,
+  pathWithCrossJumps,
+  orthogonalPolyline,
+  WIRE_JUMP_RADIUS,
 } from '../utils/wireUtils';
 
 describe('expandOrthogonalPoints', () => {
@@ -125,6 +128,55 @@ describe('roundedPathFromPoints', () => {
       7,
     );
     expect(d).toBe('M 0 0 L 1 0 L 1 100');
+  });
+});
+
+describe('pathWithCrossJumps', () => {
+  it('arches a horizontal run over a crossing vertical wire', () => {
+    const horizontal = [
+      { x: 0, y: 50 },
+      { x: 200, y: 50 },
+    ];
+    const vertical = [
+      { x: 100, y: 0 },
+      { x: 100, y: 100 },
+    ];
+    const d = pathWithCrossJumps(horizontal, [vertical]);
+    const r = WIRE_JUMP_RADIUS;
+    expect(d).toContain(`A ${r} ${r} 0 0 0 ${100 + r} 50`);
+    expect(d).toContain(`L ${100 - r} 50`);
+  });
+
+  it('arches upward on a right-to-left horizontal run too', () => {
+    const horizontal = [
+      { x: 200, y: 50 },
+      { x: 0, y: 50 },
+    ];
+    const vertical = [
+      { x: 100, y: 0 },
+      { x: 100, y: 100 },
+    ];
+    const d = pathWithCrossJumps(horizontal, [vertical]);
+    const r = WIRE_JUMP_RADIUS;
+    // approach at 100+r, leave at 100-r, sweep 0 → bulge toward smaller y
+    expect(d).toContain(`A ${r} ${r} 0 0 0 ${100 - r} 50`);
+  });
+
+  it('stays flat at a T-junction where the vertical ends on the horizontal', () => {
+    const horizontal = [
+      { x: 0, y: 50 },
+      { x: 200, y: 50 },
+    ];
+    const stub = [
+      { x: 100, y: 0 },
+      { x: 100, y: 50 },
+    ];
+    expect(pathWithCrossJumps(horizontal, [stub])).toBe('M 0 50 L 200 50');
+  });
+
+  it('leaves a lone wire without foreign crossings unchanged', () => {
+    const pts = orthogonalPolyline({ x: 0, y: 10 }, [], { x: 200, y: 10 });
+    expect(pathWithCrossJumps(pts, [])).toBe('M 0 10 L 200 10');
   });
 });
 

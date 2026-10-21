@@ -66,6 +66,33 @@ export async function uninstallLibrary(name: string): Promise<{ success: boolean
   return data;
 }
 
+let catalogCache: ArduinoLibrary[] | null = null;
+let catalogInflight: Promise<ArduinoLibrary[]> | null = null;
+
+/** Full Arduino library index (latest version of each name). Cached for the page session. */
+export async function getLibraryCatalog(): Promise<ArduinoLibrary[]> {
+  if (catalogCache) return catalogCache;
+  if (catalogInflight) return catalogInflight;
+
+  catalogInflight = (async () => {
+    console.info('[libraries] catalog fetch start');
+    const res = await fetch(`${apiBase()}/catalog`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
+      throw new Error(err.detail || 'Failed to load library catalog');
+    }
+    const data = await res.json();
+    const libraries = Array.isArray(data.libraries) ? data.libraries : [];
+    console.info('[libraries] catalog loaded', { count: libraries.length });
+    catalogCache = libraries;
+    return libraries;
+  })().finally(() => {
+    catalogInflight = null;
+  });
+
+  return catalogInflight;
+}
+
 export async function getInstalledLibraries(): Promise<InstalledLibrary[]> {
   const res = await fetch(`${apiBase()}/list`);
   if (!res.ok) {

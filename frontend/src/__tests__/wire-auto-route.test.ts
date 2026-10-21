@@ -277,6 +277,25 @@ describe('routeAroundObstacles — escape corridors (endpoint inside obstacle)',
     const corners = routeAroundObstacles({ x: 0, y: 0 }, { x: 300, y: 0 }, [rect], []);
     expect(corners).not.toBeNull(); // must detour around it
   });
+
+  it('does not slide down a board pin column through other pads', () => {
+    // ESP32-sized body; right-header GND2 → OLED above-right. Without the
+    // board as an obstacle the elbow runs vertically at x=414 through every
+    // right-side pad — the "穿多个焊点" case from the speaker example.
+    const board: ObstacleRect = { x: 280, y: 120, w: 141, h: 265 };
+    const start = { x: 414, y: 314 }; // inside right edge
+    const end = { x: 560, y: 50 };
+    const corners = routeAroundObstacles(start, end, [board], []);
+    expect(corners).not.toBeNull();
+    const pts = expandOrthogonalPoints([start, ...corners!, end]);
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      if (a.x !== b.x || a.x !== start.x) continue;
+      // Only a short outward stub along the pin column is allowed.
+      expect(Math.abs(a.y - b.y), `pin-column run ${a.y}→${b.y}`).toBeLessThan(40);
+    }
+  });
 });
 
 describe('routeAroundObstacles — overlapping obstacle slab (seated resistor bank)', () => {
