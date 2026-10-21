@@ -1,0 +1,11 @@
+{
+  "id": "arm-default",
+  "name": "视觉臂默认装配",
+  "mechanismId": "4dof-arm",
+  "mounts": [
+    { "componentId": "sv_base", "jointId": "j_base", "kind": "servo" },
+    { "componentId": "sv_shld", "jointId": "j_shld", "kind": "servo" },
+    { "componentId": "sv_elbw", "jointId": "j_elbw", "kind": "servo" },
+    { "componentId": "sv_grip", "jointId": "j_grip", "kind": "servo" }
+  ]
+}

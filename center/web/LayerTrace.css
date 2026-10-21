@@ -1,0 +1,43 @@
+.center-trace {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  min-height: 26px;
+  background: #15191f;
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+
+.center-trace-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid #3a4a5a;
+  color: #8b919a;
+  background: #1b1f27;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.center-trace-chip.on {
+  border-color: #38bdf8;
+  color: #e0f2fe;
+  background: #0e3a5a;
+}
+
+.center-trace-pin {
+  font-size: 9px;
+  color: #7dd3fc;
+  opacity: 0.85;
+}
+
+.center-trace-chip.on .center-trace-pin {
+  color: #fde68a;
+}

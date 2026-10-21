@@ -1,0 +1,57 @@
+.vap-drive {
+  flex-shrink: 0;
+  padding: 6px 8px 7px;
+  background: #15191f;
+  border-bottom: 1px solid #333;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vap-drive-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 18px;
+}
+
+.vap-drive-lab {
+  width: 36px;
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #8b919a;
+  letter-spacing: 0.04em;
+}
+
+.vap-drive-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid #3a4a5a;
+  color: #8b919a;
+  background: #1b1f27;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vap-drive-chip.on {
+  border-color: #38bdf8;
+  color: #e0f2fe;
+  background: #0e3a5a;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.25);
+}
+
+.vap-drive-pin {
+  font-size: 9px;
+  color: #7dd3fc;
+  opacity: 0.85;
+}
+
+.vap-drive-chip.on .vap-drive-pin {
+  color: #fde68a;
+}

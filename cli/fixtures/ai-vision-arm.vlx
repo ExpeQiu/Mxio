@@ -1,0 +1,359 @@
+{
+  "format": "velxio-project",
+  "version": 1,
+  "exportedAt": "2026-08-18T12:22:16.423Z",
+  "name": "ESP32-CAM: AI 视觉机械臂（人脸跟随）",
+  "boards": [
+    {
+      "id": "esp32-cam",
+      "boardKind": "esp32-cam",
+      "x": 240,
+      "y": 80,
+      "activeFileGroupId": "group-esp32-cam",
+      "libraries": [
+        "ESP32Servo"
+      ]
+    }
+  ],
+  "fileGroups": {
+    "group-esp32-cam": [
+      {
+        "name": "sketch.ino",
+        "content": "// ESP32-CAM — 人脸移动跟随 4DOF 机械臂\n// 点画布 Camera 注入 webcam。JPEG → RGB565(160×120) → YCbCr 肤色质心 →\n// 偏差驱动基座(左右) / 肩+肘(上下)，把脸锁在画面中心即跟随。\n// 仿真与真机同一控制律；真机可把 findFace() 换成 ESP-WHO / 上位机 OpenCV。\n\n#include \"esp_camera.h\"\n#include \"img_converters.h\"\n#include <ESP32Servo.h>\n\n#define PWDN_GPIO_NUM  32\n#define RESET_GPIO_NUM -1\n#define XCLK_GPIO_NUM   0\n#define SIOD_GPIO_NUM  26\n#define SIOC_GPIO_NUM  27\n#define Y9_GPIO_NUM    35\n#define Y8_GPIO_NUM    34\n#define Y7_GPIO_NUM    39\n#define Y6_GPIO_NUM    36\n#define Y5_GPIO_NUM    21\n#define Y4_GPIO_NUM    19\n#define Y3_GPIO_NUM    18\n#define Y2_GPIO_NUM     5\n#define VSYNC_GPIO_NUM 25\n#define HREF_GPIO_NUM  23\n#define PCLK_GPIO_NUM  22\n\n#define PIN_BASE 12\n#define PIN_SHLD 13\n#define PIN_ELBW 14\n#define PIN_GRIP 15\n#define PIN_LOCK  2\n\n#define PREVIEW_W 160\n#define PREVIEW_H 120\n#define MIN_FACE_PX 30\n#define DEADZONE_PX 8\n#define MAX_STEP_DEG 4\n#define LOST_FRAMES 12\n\nstatic uint8_t rgbBuf[PREVIEW_W * PREVIEW_H * 2];\n\nServo svBase, svShld, svElbw, svGrip;\nint angBase = 90, angShld = 90, angElbw = 90, angGrip = 70;\nint filtCx = PREVIEW_W / 2, filtCy = PREVIEW_H / 2;\nint lost = LOST_FRAMES;\n\nstatic bool initCamera() {\n  camera_config_t cfg = {};\n  cfg.ledc_channel = LEDC_CHANNEL_0;\n  cfg.ledc_timer   = LEDC_TIMER_0;\n  cfg.pin_d0 = Y2_GPIO_NUM; cfg.pin_d1 = Y3_GPIO_NUM;\n  cfg.pin_d2 = Y4_GPIO_NUM; cfg.pin_d3 = Y5_GPIO_NUM;\n  cfg.pin_d4 = Y6_GPIO_NUM; cfg.pin_d5 = Y7_GPIO_NUM;\n  cfg.pin_d6 = Y8_GPIO_NUM; cfg.pin_d7 = Y9_GPIO_NUM;\n  cfg.pin_xclk     = XCLK_GPIO_NUM;\n  cfg.pin_pclk     = PCLK_GPIO_NUM;\n  cfg.pin_vsync    = VSYNC_GPIO_NUM;\n  cfg.pin_href     = HREF_GPIO_NUM;\n  cfg.pin_sccb_sda = SIOD_GPIO_NUM;\n  cfg.pin_sccb_scl = SIOC_GPIO_NUM;\n  cfg.pin_pwdn     = PWDN_GPIO_NUM;\n  cfg.pin_reset    = RESET_GPIO_NUM;\n  cfg.xclk_freq_hz = 20000000;\n  cfg.pixel_format = PIXFORMAT_JPEG;\n  cfg.frame_size   = FRAMESIZE_QVGA;\n  cfg.jpeg_quality = 12;\n  cfg.fb_count     = 1;\n  cfg.fb_location  = CAMERA_FB_IN_DRAM;\n  return esp_camera_init(&cfg) == ESP_OK;\n}\n\n// YCbCr 肤色：室内人脸/手会成团。隔点采样，质心即「脸」位置。\nstatic bool findFace(const uint8_t* rgb, int w, int h, int* cx, int* cy, int* nOut) {\n  uint32_t sx = 0, sy = 0;\n  int n = 0;\n  for (int y = 0; y < h; y += 2) {\n    const uint16_t* row = (const uint16_t*)(rgb + y * w * 2);\n    for (int x = 0; x < w; x += 2) {\n      uint16_t p = row[x];\n      int r = ((p >> 11) & 0x1f) << 3;\n      int g = ((p >> 5) & 0x3f) << 2;\n      int b = (p & 0x1f) << 3;\n      int cb = 128 + ((-38 * r - 74 * g + 112 * b) >> 8);\n      int cr = 128 + ((112 * r - 94 * g - 18 * b) >> 8);\n      if (r > 60 && cb >= 77 && cb <= 127 && cr >= 133 && cr <= 173) {\n        sx += (uint32_t)x;\n        sy += (uint32_t)y;\n        n++;\n      }\n    }\n  }\n  if (n < MIN_FACE_PX) return false;\n  *cx = (int)(sx / (uint32_t)n);\n  *cy = (int)(sy / (uint32_t)n);\n  *nOut = n;\n  return true;\n}\n\nstatic int stepToward(int err, int span) {\n  if (err > -DEADZONE_PX && err < DEADZONE_PX) return 0;\n  int s = err * MAX_STEP_DEG / (span / 2);\n  if (s > MAX_STEP_DEG) s = MAX_STEP_DEG;\n  if (s < -MAX_STEP_DEG) s = -MAX_STEP_DEG;\n  return s;\n}\n\nstatic int lerp(int a, int b, int num, int den) {\n  return a + (b - a) * num / den;\n}\n\nvoid setup() {\n  Serial.begin(115200);\n  delay(200);\n  pinMode(PIN_LOCK, OUTPUT);\n  digitalWrite(PIN_LOCK, LOW);\n\n  svBase.attach(PIN_BASE, 500, 2400);\n  svShld.attach(PIN_SHLD, 500, 2400);\n  svElbw.attach(PIN_ELBW, 500, 2400);\n  svGrip.attach(PIN_GRIP, 500, 2400);\n  svBase.write(angBase);\n  svShld.write(angShld);\n  svElbw.write(angElbw);\n  svGrip.write(angGrip);\n\n  if (!initCamera()) {\n    Serial.println(\"[arm] camera_init FAIL\");\n    while (1) delay(1000);\n  }\n  Serial.println(\"[arm] camera_init OK  face-follow base/shld/elbw\");\n}\n\nvoid loop() {\n  camera_fb_t* fb = esp_camera_fb_get();\n  if (!fb) {\n    digitalWrite(PIN_LOCK, LOW);\n    Serial.println(\"[arm] no frame\");\n    delay(80);\n    return;\n  }\n\n  bool decoded = jpg2rgb565(fb->buf, fb->len, rgbBuf, JPG_SCALE_2X);\n  size_t nbytes = fb->len;\n  esp_camera_fb_return(fb);\n\n  int cx = 0, cy = 0, nSkin = 0;\n  bool found = decoded && findFace(rgbBuf, PREVIEW_W, PREVIEW_H, &cx, &cy, &nSkin);\n\n  if (found) {\n    lost = 0;\n    filtCx = (filtCx * 3 + cx) / 4;\n    filtCy = (filtCy * 3 + cy) / 4;\n    int errX = filtCx - PREVIEW_W / 2;\n    int errY = filtCy - PREVIEW_H / 2;\n    // 脸在画面右侧 → 基座右转；脸在画面下方(y↓) → 肩下俯\n    angBase = constrain(angBase + stepToward(errX, PREVIEW_W), 20, 160);\n    angShld = constrain(angShld + stepToward(errY, PREVIEW_H), 40, 140);\n    angElbw = constrain(90 - (angShld - 90) / 2, 40, 140);\n    bool centered = abs(errX) < 16 && abs(errY) < 16;\n    angGrip = (centered && nSkin > 80) ? 20 : 70;\n    digitalWrite(PIN_LOCK, centered ? HIGH : LOW);\n    Serial.printf(\"[arm] face=1 cx=%d cy=%d n=%d err=%d,%d base=%d shld=%d elbw=%d grip=%d bytes=%u\\n\",\n                  filtCx, filtCy, nSkin, errX, errY, angBase, angShld, angElbw, angGrip,\n                  (unsigned)nbytes);\n  } else {\n    lost++;\n    digitalWrite(PIN_LOCK, LOW);\n    if (lost > LOST_FRAMES) {\n      angBase = lerp(angBase, 90, 1, 8);\n      angShld = lerp(angShld, 90, 1, 8);\n      angElbw = lerp(angElbw, 90, 1, 8);\n      angGrip = 70;\n    }\n    Serial.printf(\"[arm] face=0 decode=%d lost=%d base=%d shld=%d bytes=%u\\n\",\n                  decoded ? 1 : 0, lost, angBase, angShld, (unsigned)nbytes);\n  }\n\n  svBase.write(angBase);\n  svShld.write(angShld);\n  svElbw.write(angElbw);\n  svGrip.write(angGrip);\n  delay(50);\n}\n"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "sv_base",
+      "metadataId": "servo",
+      "x": 390,
+      "y": 70,
+      "properties": {
+        "horn": "single",
+        "label": "基座"
+      }
+    },
+    {
+      "id": "sv_shld",
+      "metadataId": "servo",
+      "x": 555,
+      "y": 70,
+      "properties": {
+        "horn": "single",
+        "label": "肩"
+      }
+    },
+    {
+      "id": "sv_elbw",
+      "metadataId": "servo",
+      "x": 390,
+      "y": 170,
+      "properties": {
+        "horn": "single",
+        "label": "肘"
+      }
+    },
+    {
+      "id": "sv_grip",
+      "metadataId": "servo",
+      "x": 555,
+      "y": 170,
+      "properties": {
+        "horn": "single",
+        "label": "夹爪"
+      }
+    },
+    {
+      "id": "rled",
+      "metadataId": "resistor",
+      "x": 40,
+      "y": 200,
+      "properties": {
+        "value": "220"
+      }
+    },
+    {
+      "id": "led_ok",
+      "metadataId": "led",
+      "x": 40,
+      "y": 270,
+      "properties": {
+        "color": "red"
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "w_base_pwm",
+      "start": {
+        "componentId": "esp32-cam",
+        "pinName": "12",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_base",
+        "pinName": "PWM",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#22c55e",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_shld_pwm",
+      "start": {
+        "componentId": "esp32-cam",
+        "pinName": "13",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_shld",
+        "pinName": "PWM",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#38bdf8",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_elbw_pwm",
+      "start": {
+        "componentId": "esp32-cam",
+        "pinName": "14",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_elbw",
+        "pinName": "PWM",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#a855f7",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_grip_pwm",
+      "start": {
+        "componentId": "esp32-cam",
+        "pinName": "15",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_grip",
+        "pinName": "PWM",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#f97316",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_base_vcc",
+      "start": {
+        "componentId": "esp32-cam",
+        "pinName": "5V.1",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_base",
+        "pinName": "V+",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#ef4444",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_shld_vcc",
+      "start": {
+        "componentId": "esp32-cam",
+        "pinName": "5V.1",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_shld",
+        "pinName": "V+",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#ef4444",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_elbw_vcc",
+      "start": {
+        "componentId": "esp32-cam",
+        "pinName": "5V.1",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_elbw",
+        "pinName": "V+",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#ef4444",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_grip_vcc",
+      "start": {
+        "componentId": "esp32-cam",
+        "pinName": "5V.1",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_grip",
+        "pinName": "V+",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#ef4444",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_base_gnd",
+      "start": {
+        "componentId": "esp32-cam",
+        "pinName": "GND.1",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_base",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#111111",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_shld_gnd",
+      "start": {
+        "componentId": "esp32-cam",
+        "pinName": "GND.1",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_shld",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#111111",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_elbw_gnd",
+      "start": {
+        "componentId": "esp32-cam",
+        "pinName": "GND.1",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_elbw",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#111111",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_grip_gnd",
+      "start": {
+        "componentId": "esp32-cam",
+        "pinName": "GND.1",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_grip",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#111111",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_led_gpio",
+      "start": {
+        "componentId": "esp32-cam",
+        "pinName": "2",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "rled",
+        "pinName": "1",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#facc15",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_led_r",
+      "start": {
+        "componentId": "rled",
+        "pinName": "2",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "led_ok",
+        "pinName": "A",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#facc15",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_led_gnd",
+      "start": {
+        "componentId": "led_ok",
+        "pinName": "C",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "esp32-cam",
+        "pinName": "GND.1",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#111111",
+      "waypoints": [],
+      "autoRouted": true
+    }
+  ],
+  "activeBoardId": "esp32-cam"
+}

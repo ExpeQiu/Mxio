@@ -1,0 +1,62 @@
+{
+  "id": "4dof-arm",
+  "name": "四自由度机械臂",
+  "kind": "serial",
+  "links": [
+    { "id": "world", "length": 0 },
+    { "id": "base", "length": 0.06, "radius": 0.028, "color": "#64748b" },
+    { "id": "upper", "length": 0.12, "radius": 0.014, "color": "#38bdf8" },
+    { "id": "fore", "length": 0.1, "radius": 0.012, "color": "#22c55e" },
+    { "id": "grip", "length": 0.04, "radius": 0.01, "color": "#f59e0b" }
+  ],
+  "joints": [
+    {
+      "id": "j_base",
+      "name": "基座",
+      "type": "revolute",
+      "parent": "world",
+      "child": "base",
+      "origin": { "xyz": [0, 0, 0], "rpy": [0, 0, 0] },
+      "axis": [0, 0, 1],
+      "componentId": "sv_base",
+      "qOffsetDeg": -90,
+      "qScale": 1
+    },
+    {
+      "id": "j_shld",
+      "name": "肩",
+      "type": "revolute",
+      "parent": "base",
+      "child": "upper",
+      "origin": { "xyz": [0, 0, 0.06], "rpy": [0, 0, 0] },
+      "axis": [0, 1, 0],
+      "componentId": "sv_shld",
+      "qOffsetDeg": -90,
+      "qScale": 1
+    },
+    {
+      "id": "j_elbw",
+      "name": "肘",
+      "type": "revolute",
+      "parent": "upper",
+      "child": "fore",
+      "origin": { "xyz": [0.12, 0, 0], "rpy": [0, 0, 0] },
+      "axis": [0, 1, 0],
+      "componentId": "sv_elbw",
+      "qOffsetDeg": -90,
+      "qScale": 1
+    },
+    {
+      "id": "j_grip",
+      "name": "夹爪",
+      "type": "revolute",
+      "parent": "fore",
+      "child": "grip",
+      "origin": { "xyz": [0.1, 0, 0], "rpy": [0, 0, 0] },
+      "axis": [0, 0, 1],
+      "componentId": "sv_grip",
+      "qOffsetDeg": -70,
+      "qScale": 1
+    }
+  ]
+}

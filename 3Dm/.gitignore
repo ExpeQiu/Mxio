@@ -1,0 +1,9 @@
+node_modules/
+dist/
+logs/*.log
+logs/*.jsonl
+logs/*.pid
+.npm-cache/
+._*
+.DS_Store
+*.tsbuildinfo

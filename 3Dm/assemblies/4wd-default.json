@@ -1,0 +1,11 @@
+{
+  "id": "4wd-default",
+  "name": "四驱默认装配",
+  "mechanismId": "4wd-chassis",
+  "mounts": [
+    { "componentId": "m_fl", "jointId": "j_fl", "kind": "dc-motor" },
+    { "componentId": "m_fr", "jointId": "j_fr", "kind": "dc-motor" },
+    { "componentId": "m_rl", "jointId": "j_rl", "kind": "dc-motor" },
+    { "componentId": "m_rr", "jointId": "j_rr", "kind": "dc-motor" }
+  ]
+}

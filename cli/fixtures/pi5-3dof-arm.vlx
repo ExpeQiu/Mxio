@@ -1,0 +1,292 @@
+{
+  "format": "velxio-project",
+  "version": 1,
+  "exportedAt": "2026-09-16T11:52:54.956Z",
+  "name": "[Pi 5] 三轴机械摆臂",
+  "boards": [
+    {
+      "id": "raspberry-pi-5",
+      "boardKind": "raspberry-pi-5",
+      "x": 40,
+      "y": 80,
+      "activeFileGroupId": "group-raspberry-pi-5"
+    }
+  ],
+  "fileGroups": {
+    "group-raspberry-pi-5": [
+      {
+        "name": "script.py",
+        "content": "#!/usr/bin/env python3\n# Raspberry Pi 5 — 3DOF swing arm (gpiozero AngularServo)\n#\n# Pin map (BCM). Hobby-servo pulse 544–2400 µs ↔ 0–180° (same-law as Servo.h).\n#   sv_base PWM=GPIO12\n#   sv_shld PWM=GPIO13\n#   sv_elbw PWM=GPIO18\n#   led     GPIO17 → 220Ω → LED anode, cathode → GND\n#\n# Start the Pi, Upload, then: python3 /home/pi/script.py\n# Default: demo sweep. Other: home | wave | demo | pose <base> <shld> <elbw>\n\nfrom __future__ import print_function\n\nimport sys\nimport time\n\ntry:\n    from gpiozero import AngularServo, LED\nexcept ImportError:\n    AngularServo = None\n    LED = None\n\nPINS = {\"base\": 12, \"shld\": 13, \"elbw\": 18}\nLED_PIN = 17\nHOME = {\"base\": 90, \"shld\": 90, \"elbw\": 90}\nPULSE_MIN = 0.000544\nPULSE_MAX = 0.0024\n\n\ndef log(turn_id, state, mock, extra=\"\"):\n    extra = (\" \" + extra) if extra else \"\"\n    print(\n        \"[arm] turn_id=%s state=%s mock=%s%s\" % (turn_id, state, mock, extra),\n        flush=True,\n    )\n\n\nclass MockHorn:\n    def __init__(self, pin):\n        self.pin = pin\n        self.angle = 90\n\n    def close(self):\n        pass\n\n\nclass ThreeAxisArm:\n    def __init__(self):\n        self.mock = 0\n        self.turn_id = 0\n        self.led = None\n        self.servos = {}\n        if AngularServo is None:\n            self._use_mock(\"gpiozero missing\")\n            return\n        try:\n            for name, pin in PINS.items():\n                self.servos[name] = AngularServo(\n                    pin,\n                    min_angle=0,\n                    max_angle=180,\n                    min_pulse_width=PULSE_MIN,\n                    max_pulse_width=PULSE_MAX,\n                    initial_angle=HOME[name],\n                )\n            if LED is not None:\n                self.led = LED(LED_PIN)\n        except Exception as err:\n            self._use_mock(str(err))\n\n    def _use_mock(self, reason):\n        self.mock = 1\n        self.servos = {name: MockHorn(pin) for name, pin in PINS.items()}\n        self.led = None\n        log(0, \"INIT\", 1, \"fallback=%s\" % reason.replace(\" \", \"_\"))\n\n    def _flash(self):\n        if self.led is None:\n            return\n        self.led.on()\n        time.sleep(0.05)\n        self.led.off()\n\n    def pose(self, base, shld, elbw, state=\"POSE\"):\n        self.turn_id += 1\n        q = {\n            \"base\": max(0, min(180, int(base))),\n            \"shld\": max(0, min(180, int(shld))),\n            \"elbw\": max(0, min(180, int(elbw))),\n        }\n        for name, angle in q.items():\n            try:\n                self.servos[name].angle = angle\n            except Exception:\n                pass\n        self._flash()\n        log(\n            self.turn_id,\n            state,\n            self.mock,\n            \"base=%s shld=%s elbw=%s\" % (q[\"base\"], q[\"shld\"], q[\"elbw\"]),\n        )\n        return q\n\n    def home(self):\n        return self.pose(HOME[\"base\"], HOME[\"shld\"], HOME[\"elbw\"], \"HOME\")\n\n    def wave(self):\n        log(self.turn_id, \"WAVE\", self.mock, \"start\")\n        self.home()\n        for elbw in (40, 140, 40, 140, 90):\n            self.pose(90, 70, elbw, \"WAVE\")\n            time.sleep(0.25)\n        return self.home()\n\n    def demo(self):\n        log(self.turn_id, \"DEMO\", self.mock, \"start\")\n        path = (\n            (90, 90, 90),\n            (45, 60, 120),\n            (135, 60, 120),\n            (90, 30, 150),\n            (90, 120, 40),\n            (90, 90, 90),\n        )\n        for base, shld, elbw in path:\n            self.pose(base, shld, elbw, \"DEMO\")\n            time.sleep(0.4)\n        return self.home()\n\n    def close(self):\n        for sv in self.servos.values():\n            try:\n                sv.close()\n            except Exception:\n                pass\n        if self.led is not None:\n            try:\n                self.led.close()\n            except Exception:\n                pass\n\n\ndef parse_pose(parts):\n    if len(parts) < 4:\n        return None\n    try:\n        return int(parts[1]), int(parts[2]), int(parts[3])\n    except ValueError:\n        return None\n\n\ndef handle(arm, raw):\n    line = raw.strip().lower()\n    if not line:\n        return True\n    parts = line.split()\n    cmd = parts[0]\n    if cmd in (\"home\", \"h\"):\n        arm.home()\n    elif cmd in (\"wave\", \"w\"):\n        arm.wave()\n    elif cmd in (\"demo\", \"d\"):\n        arm.demo()\n    elif cmd in (\"pose\", \"p\", \"q\"):\n        angles = parse_pose(parts)\n        if angles is None:\n            log(arm.turn_id, \"ERR\", arm.mock, \"need=pose_base_shld_elbw\")\n        else:\n            arm.pose(*angles)\n    elif cmd in (\"quit\", \"exit\"):\n        return False\n    else:\n        log(arm.turn_id, \"ERR\", arm.mock, \"unknown=%s\" % cmd)\n    return True\n\n\ndef main():\n    action = sys.argv[1].lower() if len(sys.argv) > 1 else \"demo\"\n    arm = ThreeAxisArm()\n    log(0, \"READY\", arm.mock, \"cmd=home|wave|demo|pose\")\n    try:\n        if action == \"demo\":\n            arm.demo()\n        elif action == \"wave\":\n            arm.wave()\n        elif action == \"home\":\n            arm.home()\n        elif action == \"pose\":\n            angles = parse_pose(sys.argv[1:])\n            if angles:\n                arm.pose(*angles)\n            else:\n                arm.home()\n        else:\n            log(0, \"ERR\", arm.mock, \"unknown=%s\" % action)\n            arm.home()\n        if sys.stdin.isatty() or action == \"demo\":\n            print(\"[arm] waiting serial: home|wave|demo|pose <b> <s> <e>\", flush=True)\n            for raw in sys.stdin:\n                if not handle(arm, raw):\n                    break\n    except KeyboardInterrupt:\n        log(arm.turn_id, \"STOP\", arm.mock, \"interrupted\")\n    finally:\n        arm.close()\n\n\nif __name__ == \"__main__\":\n    main()\n"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "sv_base",
+      "metadataId": "servo",
+      "x": 400,
+      "y": 40,
+      "properties": {
+        "horn": "single",
+        "label": "基座"
+      }
+    },
+    {
+      "id": "sv_shld",
+      "metadataId": "servo",
+      "x": 580,
+      "y": 40,
+      "properties": {
+        "horn": "single",
+        "label": "肩"
+      }
+    },
+    {
+      "id": "sv_elbw",
+      "metadataId": "servo",
+      "x": 400,
+      "y": 170,
+      "properties": {
+        "horn": "single",
+        "label": "肘"
+      }
+    },
+    {
+      "id": "rled",
+      "metadataId": "resistor",
+      "x": 40,
+      "y": 320,
+      "properties": {
+        "value": "220"
+      }
+    },
+    {
+      "id": "ledok",
+      "metadataId": "led",
+      "x": 40,
+      "y": 390,
+      "properties": {
+        "color": "red"
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "w_base_pwm",
+      "start": {
+        "componentId": "raspberry-pi-5",
+        "pinName": "GPIO12",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_base",
+        "pinName": "PWM",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#22c55e",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_shld_pwm",
+      "start": {
+        "componentId": "raspberry-pi-5",
+        "pinName": "GPIO13",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_shld",
+        "pinName": "PWM",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#38bdf8",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_elbw_pwm",
+      "start": {
+        "componentId": "raspberry-pi-5",
+        "pinName": "GPIO18",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_elbw",
+        "pinName": "PWM",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#a855f7",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_base_vcc",
+      "start": {
+        "componentId": "raspberry-pi-5",
+        "pinName": "5V",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_base",
+        "pinName": "V+",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#ef4444",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_shld_vcc",
+      "start": {
+        "componentId": "raspberry-pi-5",
+        "pinName": "5V",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_shld",
+        "pinName": "V+",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#ef4444",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_elbw_vcc",
+      "start": {
+        "componentId": "raspberry-pi-5",
+        "pinName": "5V",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_elbw",
+        "pinName": "V+",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#ef4444",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_base_gnd",
+      "start": {
+        "componentId": "raspberry-pi-5",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_base",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#111111",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_shld_gnd",
+      "start": {
+        "componentId": "raspberry-pi-5",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_shld",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#111111",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_elbw_gnd",
+      "start": {
+        "componentId": "raspberry-pi-5",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "sv_elbw",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#111111",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_led_gpio",
+      "start": {
+        "componentId": "raspberry-pi-5",
+        "pinName": "GPIO17",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "rled",
+        "pinName": "1",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#facc15",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_led_r",
+      "start": {
+        "componentId": "rled",
+        "pinName": "2",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "ledok",
+        "pinName": "A",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#facc15",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_led_gnd",
+      "start": {
+        "componentId": "ledok",
+        "pinName": "C",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "raspberry-pi-5",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#111111",
+      "waypoints": [],
+      "autoRouted": true
+    }
+  ],
+  "activeBoardId": "raspberry-pi-5"
+}

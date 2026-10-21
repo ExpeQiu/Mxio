@@ -1,0 +1,29 @@
+{
+  "name": "velxio-3dm",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Velxio 三维运动系统：执行器总线 → 运动学正解 → 3D / WebXR",
+  "type": "module",
+  "bin": {
+    "3dm": "./bin/3dm"
+  },
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 5174",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 5174",
+    "test": "vitest run",
+    "3dm": "tsx --tsconfig tsconfig.json src/cli.ts"
+  },
+  "dependencies": {
+    "commander": "^14.0.0",
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/three": "^0.170.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.4"
+  }
+}

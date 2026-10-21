@@ -1,0 +1,371 @@
+.vremote {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  padding: 6px 8px 8px;
+  background:
+    radial-gradient(ellipse at 50% 0%, #1a3a28 0%, transparent 55%),
+    linear-gradient(180deg, #12151a 0%, #0b0d10 100%);
+  outline: none;
+}
+
+.vremote-dock {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 8px;
+  margin: 0 4px 6px;
+  border-radius: 8px 8px 4px 4px;
+  background: linear-gradient(180deg, #1f4a32 0%, #163526 100%);
+  border: 1px solid #2f6a48;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.vremote-dock-brand {
+  display: flex;
+  flex-direction: column;
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  color: #9ee6b8;
+  font-weight: 700;
+  min-width: 42px;
+}
+
+.vremote-dock-ver {
+  letter-spacing: 0.04em;
+  font-weight: 500;
+  color: #6f9a7c;
+}
+
+.vremote-dock-btns {
+  display: flex;
+  flex: 1;
+  justify-content: space-around;
+  gap: 4px;
+}
+
+.vremote-periph {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.vremote-periph-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid #0b1220;
+  cursor: pointer;
+  box-shadow:
+    0 2px 0 #0b1220,
+    inset 0 2px 3px rgba(255, 255, 255, 0.35);
+}
+
+.vremote-periph-btn.camera {
+  background: #2563eb;
+}
+.vremote-periph-btn.mic {
+  background: #e8eaed;
+}
+.vremote-periph-btn.speaker {
+  background: #dc2626;
+}
+
+.vremote-periph-btn.on {
+  box-shadow:
+    0 0 10px currentColor,
+    0 2px 0 #0b1220,
+    inset 0 2px 3px rgba(255, 255, 255, 0.45);
+  filter: brightness(1.15);
+}
+
+.vremote-periph-btn.pressed,
+.vremote-periph-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 0 0 #0b1220, inset 0 2px 4px rgba(0, 0, 0, 0.35);
+}
+
+.vremote-periph-btn.wait {
+  animation: vremote-pulse 1s ease-in-out infinite;
+}
+
+@keyframes vremote-pulse {
+  50% {
+    filter: brightness(1.4);
+  }
+}
+
+.vremote-periph-lab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  border: 0;
+  background: transparent;
+  color: #c5d4c9;
+  font-size: 9px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1.2;
+}
+
+.vremote-periph-lab kbd {
+  font-size: 8px;
+  color: #7dd3fc;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.vremote-picker {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  min-width: 120px;
+  max-width: 180px;
+  max-height: 140px;
+  overflow: auto;
+  background: #15191f;
+  border: 1px solid #3a4a5a;
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+}
+
+.vremote-picker button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: #e8eaed;
+  font-size: 11px;
+  padding: 5px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.vremote-picker button.sel,
+.vremote-picker button:hover {
+  background: #0e3a5a;
+}
+
+.vremote-picker-empty {
+  font-size: 11px;
+  color: #8b919a;
+  padding: 6px;
+}
+
+.vremote-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  padding: 10px 10px 8px;
+  background:
+    linear-gradient(160deg, rgba(90, 140, 110, 0.18), transparent 40%),
+    linear-gradient(180deg, #1c2220 0%, #141816 100%);
+  border: 1px solid #3a4a42;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 10px 28px rgba(0, 0, 0, 0.35);
+}
+
+.vremote-bezel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  background: #0a0c0e;
+  border-radius: 10px;
+  padding: 6px;
+  border: 1px solid #2a3038;
+}
+
+.vremote-screen {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #0b1220;
+  border-radius: 4px;
+}
+
+.vremote-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  font-size: 12px;
+  color: #8b919a;
+  text-align: center;
+  line-height: 1.5;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.vremote-pip {
+  position: absolute;
+  right: 6px;
+  top: 6px;
+  width: 72px;
+  height: 54px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #38bdf8;
+  z-index: 4;
+  transform: scaleX(-1);
+  background: #000;
+}
+
+.vremote-pip.hidden {
+  display: none;
+}
+
+.vremote-pad {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 8px 4px;
+  gap: 8px;
+}
+
+.vremote-dpad {
+  position: relative;
+  width: 92px;
+  height: 92px;
+  flex-shrink: 0;
+}
+
+.vremote-dir {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  background: #2a3038;
+  color: #9aa3ad;
+  cursor: pointer;
+  box-shadow: 0 2px 0 #0b0d10;
+}
+
+.vremote-dir span {
+  display: block;
+  width: 0;
+  height: 0;
+  border: 5px solid transparent;
+  margin: auto;
+}
+
+.vremote-dir.up {
+  left: 32px;
+  top: 2px;
+  border-radius: 4px 4px 0 0;
+}
+.vremote-dir.up span {
+  border-bottom-color: #cfd6dd;
+  border-top: 0;
+}
+.vremote-dir.down {
+  left: 32px;
+  bottom: 10px;
+  border-radius: 0 0 4px 4px;
+}
+.vremote-dir.down span {
+  border-top-color: #cfd6dd;
+  border-bottom: 0;
+}
+.vremote-dir.left {
+  left: 2px;
+  top: 32px;
+  border-radius: 4px 0 0 4px;
+}
+.vremote-dir.left span {
+  border-right-color: #cfd6dd;
+  border-left: 0;
+}
+.vremote-dir.right {
+  right: 2px;
+  top: 32px;
+  border-radius: 0 4px 4px 0;
+}
+.vremote-dir.right span {
+  border-left-color: #cfd6dd;
+  border-right: 0;
+}
+
+.vremote-dir.pressed,
+.vremote-dir:active {
+  background: #38bdf8;
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+.vremote-dir-cap {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  text-align: center;
+  font-size: 8px;
+  color: #6b7280;
+  pointer-events: none;
+}
+
+.vremote-ab {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  padding-bottom: 4px;
+}
+
+.vremote-face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  color: #c5d0d8;
+  font-size: 10px;
+}
+
+.vremote-face kbd {
+  font-size: 9px;
+  color: #fbbf24;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.vremote-face-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid #7c2d12;
+  background: radial-gradient(circle at 35% 30%, #fb923c, #ea580c 60%, #9a3412);
+  cursor: pointer;
+  box-shadow:
+    0 3px 0 #7c2d12,
+    inset 0 2px 3px rgba(255, 255, 255, 0.35);
+}
+
+.vremote-face-btn.b {
+  margin-top: 10px;
+}
+
+.vremote-face-btn.pressed,
+.vremote-face-btn:active {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 #7c2d12, inset 0 2px 6px rgba(0, 0, 0, 0.35);
+}

@@ -1,0 +1,9 @@
+{
+  "id": "car-2wd-default",
+  "name": "两驱默认装配",
+  "mechanismId": "car-2wd",
+  "mounts": [
+    { "componentId": "m_l", "jointId": "j_l", "kind": "dc-motor" },
+    { "componentId": "m_r", "jointId": "j_r", "kind": "dc-motor" }
+  ]
+}

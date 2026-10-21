@@ -1,0 +1,11 @@
+{
+  "id": "arm-swap-base-elbw",
+  "name": "基座↔肘 对调",
+  "mechanismId": "4dof-arm",
+  "mounts": [
+    { "componentId": "sv_base", "jointId": "j_elbw", "kind": "servo" },
+    { "componentId": "sv_shld", "jointId": "j_shld", "kind": "servo" },
+    { "componentId": "sv_elbw", "jointId": "j_base", "kind": "servo" },
+    { "componentId": "sv_grip", "jointId": "j_grip", "kind": "servo" }
+  ]
+}

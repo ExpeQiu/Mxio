@@ -1,0 +1,9 @@
+{
+  "module": "sim.spice.demo",
+  "currents": {
+    "v_m_fl_sense": 1.799999973,
+    "v_m_rl_sense": 1.799999973,
+    "v_m_fr_sense": 1.799999973,
+    "v_m_rr_sense": 1.799999973
+  }
+}

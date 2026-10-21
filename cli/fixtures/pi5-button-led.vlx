@@ -1,0 +1,193 @@
+{
+  "format": "velxio-project",
+  "version": 1,
+  "exportedAt": "2026-10-10T03:14:36.901Z",
+  "name": "[Pi 5] 按键切换 LED（消抖）",
+  "boards": [
+    {
+      "id": "raspberry-pi-5",
+      "boardKind": "raspberry-pi-5",
+      "x": 60,
+      "y": 60,
+      "activeFileGroupId": "group-raspberry-pi-5",
+      "libraries": []
+    }
+  ],
+  "fileGroups": {
+    "group-raspberry-pi-5": [
+      {
+        "name": "main.py",
+        "content": "#!/usr/bin/env python3\n\"\"\"Pi 5: debounced active-low button toggles an LED; mock and live share logic.\n\nBCM17 -> 220 ohm -> LED A; LED C -> GND.\nBCM27 -> button 1.l; button 2.l -> GND; 10k pull-up to 3V3.\nDefault runs a finite mock demonstration. Use --mode live on the Pi.\n\"\"\"\nimport argparse\nimport json\nimport time\n\nfrom gpiozero import Button, LED\n\nLED_PIN = 17\nBUTTON_PIN = 27\nDEBOUNCE_S = 0.05\n\n\nclass ToggleController:\n    def __init__(self, factory=None, mock=False):\n        self.mock = mock\n        self.led = LED(LED_PIN, initial_value=False, pin_factory=factory)\n        try:\n            self.button = Button(BUTTON_PIN, pull_up=True, bounce_time=None,\n                                 pin_factory=factory)\n        except Exception:\n            self.led.close()\n            raise\n        self.raw = False\n        self.stable = False\n        self.changed_at = 0.0\n        self.turn_id = 0\n        self.log(\"READY\")\n\n    def log(self, state):\n        print(json.dumps({\"project\": \"pi5-button-led\", \"turn_id\": self.turn_id,\n                          \"state\": state, \"mock\": self.mock,\n                          \"pressed\": self.stable, \"led\": int(self.led.value)},\n                         sort_keys=True), flush=True)\n\n    def sample(self, now):\n        pressed = self.button.is_pressed\n        if pressed != self.raw:\n            self.raw = pressed\n            self.changed_at = now\n        if self.raw != self.stable and now - self.changed_at >= DEBOUNCE_S:\n            self.stable = self.raw\n            if self.stable:\n                self.turn_id += 1\n                self.led.toggle()\n                self.log(\"TOGGLE\")\n            else:\n                self.log(\"RELEASE\")\n        return int(self.led.value)\n\n    def close(self):\n        self.led.off()\n        self.log(\"STOP\")\n        self.button.close()\n        self.led.close()\n\n\ndef demonstrate(controller):\n    \"\"\"Inject real MockPin edges, including bounce and a held button.\n\n    Synthetic monotonic times avoid slow/flaky sleep-based tests. Only the\n    pin driver and clock differ from live; sample() and gpiozero devices do not.\n    \"\"\"\n    pin = controller.button.pin\n    trace = []\n    # released, bouncing press, stable press, held, bouncing release, second press\n    events = [(0.00, 1), (0.01, 0), (0.02, 1), (0.03, 0),\n              (0.10, 0), (0.50, 0), (0.51, 1), (0.52, 0),\n              (0.53, 1), (0.60, 1), (0.61, 0), (0.68, 0), (0.90, 0)]\n    for now, level in events:\n        pin.drive_high() if level else pin.drive_low()\n        trace.append({\"time_s\": now, \"button_level\": level,\n                      \"led\": controller.sample(now), \"turn_id\": controller.turn_id})\n    expected_led = [0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 0, 0]\n    if [row[\"led\"] for row in trace] != expected_led or controller.turn_id != 2:\n        raise RuntimeError(\"debounce/toggle verification failed: %r\" % trace)\n    print(json.dumps({\"state\": \"PASS\", \"engine\": \"gpiozero-mock\",\n                      \"toggles\": controller.turn_id, \"trace\": trace}), flush=True)\n    return trace\n\n\ndef main():\n    parser = argparse.ArgumentParser(description=__doc__)\n    parser.add_argument(\"--mode\", choices=(\"mock\", \"live\"), default=\"mock\")\n    parser.add_argument(\"--duration\", type=float, default=0,\n                        help=\"live run seconds; 0 runs until Ctrl+C\")\n    args = parser.parse_args()\n    if args.duration < 0:\n        parser.error(\"--duration must be >= 0\")\n    factory = None\n    if args.mode == \"mock\":\n        from gpiozero.pins.mock import MockFactory\n        factory = MockFactory()\n    else:\n        # Pi 5 uses lgpio. Never silently fall back to simulated pins on hardware.\n        from gpiozero.pins.lgpio import LGPIOFactory\n        factory = LGPIOFactory()\n    controller = None\n    try:\n        controller = ToggleController(factory, mock=args.mode == \"mock\")\n        if args.mode == \"mock\":\n            demonstrate(controller)\n        else:\n            start = time.monotonic()\n            while args.duration == 0 or time.monotonic() - start < args.duration:\n                controller.sample(time.monotonic())\n                time.sleep(0.005)\n    except KeyboardInterrupt:\n        pass\n    finally:\n        if controller is not None:\n            controller.close()\n        factory.close()\n\n\nif __name__ == \"__main__\":\n    main()\n"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "rled",
+      "metadataId": "resistor",
+      "x": 460,
+      "y": 90,
+      "properties": {
+        "value": "220"
+      }
+    },
+    {
+      "id": "led",
+      "metadataId": "led",
+      "x": 590,
+      "y": 90,
+      "properties": {
+        "color": "red",
+        "label": "切换指示灯"
+      }
+    },
+    {
+      "id": "rpull",
+      "metadataId": "resistor",
+      "x": 450,
+      "y": 250,
+      "properties": {
+        "value": "10000"
+      }
+    },
+    {
+      "id": "btn",
+      "metadataId": "pushbutton",
+      "x": 590,
+      "y": 270,
+      "properties": {
+        "label": "切换",
+        "pressed": false
+      }
+    }
+  ],
+  "wires": [
+    {
+      "id": "wledgpio",
+      "start": {
+        "componentId": "raspberry-pi-5",
+        "pinName": "GPIO17",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "rled",
+        "pinName": "1",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#facc15",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "wledseries",
+      "start": {
+        "componentId": "rled",
+        "pinName": "2",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "led",
+        "pinName": "A",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#facc15",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "wledgnd",
+      "start": {
+        "componentId": "led",
+        "pinName": "C",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "raspberry-pi-5",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#111111",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "wbtninput",
+      "start": {
+        "componentId": "raspberry-pi-5",
+        "pinName": "GPIO27",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "btn",
+        "pinName": "1.l",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#22c55e",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "wbtngnd",
+      "start": {
+        "componentId": "btn",
+        "pinName": "2.l",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "raspberry-pi-5",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#111111",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "wpullpower",
+      "start": {
+        "componentId": "raspberry-pi-5",
+        "pinName": "3V3",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "rpull",
+        "pinName": "1",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#ef4444",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "wpullinput",
+      "start": {
+        "componentId": "rpull",
+        "pinName": "2",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "btn",
+        "pinName": "1.l",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#22c55e",
+      "waypoints": [],
+      "autoRouted": true
+    }
+  ],
+  "activeBoardId": "raspberry-pi-5"
+}

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Velxio 3Dm</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <strong>Velxio 3Dm</strong>
+      <select id="mech"></select>
+      <select id="assembly"></select>
+      <select id="gen">
+        <option value="">生成…</option>
+      </select>
+      <button id="mock" type="button">Mock 回放</button>
+      <button id="invert" type="button">反向所选</button>
+      <span id="status">点白色关节球，再点左侧执行器</span>
+    </header>
+    <div id="stage">
+      <aside id="parts"></aside>
+      <div id="view"></div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

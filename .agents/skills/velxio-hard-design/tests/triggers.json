@@ -1,0 +1,22 @@
+[
+  {
+    "query": "基于 Velxio 新建 ESP32 硬件项目",
+    "should_trigger": true
+  },
+  {
+    "query": "画一个可仿真的电路并接到图库",
+    "should_trigger": true
+  },
+  {
+    "query": "ESP32 对话机器人元件怎么选",
+    "should_trigger": true
+  },
+  {
+    "query": "查一下天气",
+    "should_trigger": false
+  },
+  {
+    "query": "只用 velxio parts list 查 LED",
+    "should_trigger": false
+  }
+]

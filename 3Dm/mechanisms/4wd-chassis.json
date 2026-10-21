@@ -1,0 +1,76 @@
+{
+  "id": "4wd-chassis",
+  "name": "四驱底盘",
+  "kind": "vehicle",
+  "links": [
+    { "id": "world", "length": 0 },
+    { "id": "chassis", "length": 0.22, "radius": 0.04, "color": "#334155" },
+    { "id": "w_fl", "length": 0.02, "radius": 0.03, "color": "#1f2937" },
+    { "id": "w_fr", "length": 0.02, "radius": 0.03, "color": "#1f2937" },
+    { "id": "w_rl", "length": 0.02, "radius": 0.03, "color": "#1f2937" },
+    { "id": "w_rr", "length": 0.02, "radius": 0.03, "color": "#1f2937" }
+  ],
+  "joints": [
+    {
+      "id": "j_chassis",
+      "name": "车体",
+      "type": "fixed",
+      "parent": "world",
+      "child": "chassis",
+      "origin": { "xyz": [0, 0, 0.03], "rpy": [0, 0, 0] },
+      "axis": [0, 0, 1],
+      "componentId": "*",
+      "qOffsetDeg": 0
+    },
+    {
+      "id": "j_fl",
+      "name": "左前轮",
+      "type": "continuous",
+      "parent": "chassis",
+      "child": "w_fl",
+      "origin": { "xyz": [0.08, 0.07, 0], "rpy": [1.5708, 0, 0] },
+      "axis": [0, 0, 1],
+      "componentId": "m_fl",
+      "qOffsetDeg": 0
+    },
+    {
+      "id": "j_fr",
+      "name": "右前轮",
+      "type": "continuous",
+      "parent": "chassis",
+      "child": "w_fr",
+      "origin": { "xyz": [0.08, -0.07, 0], "rpy": [1.5708, 0, 0] },
+      "axis": [0, 0, 1],
+      "componentId": "m_fr",
+      "qOffsetDeg": 0
+    },
+    {
+      "id": "j_rl",
+      "name": "左后轮",
+      "type": "continuous",
+      "parent": "chassis",
+      "child": "w_rl",
+      "origin": { "xyz": [-0.08, 0.07, 0], "rpy": [1.5708, 0, 0] },
+      "axis": [0, 0, 1],
+      "componentId": "m_rl",
+      "qOffsetDeg": 0
+    },
+    {
+      "id": "j_rr",
+      "name": "右后轮",
+      "type": "continuous",
+      "parent": "chassis",
+      "child": "w_rr",
+      "origin": { "xyz": [-0.08, -0.07, 0], "rpy": [1.5708, 0, 0] },
+      "axis": [0, 0, 1],
+      "componentId": "m_rr",
+      "qOffsetDeg": 0
+    }
+  ],
+  "wheels": [
+    { "componentId": "m_fl", "linkId": "w_fl", "radius": 0.03 },
+    { "componentId": "m_fr", "linkId": "w_fr", "radius": 0.03 },
+    { "componentId": "m_rl", "linkId": "w_rl", "radius": 0.03 },
+    { "componentId": "m_rr", "linkId": "w_rr", "radius": 0.03 }
+  ]
+}

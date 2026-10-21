@@ -1,0 +1,11 @@
+{
+  "id": "arm-invert-base",
+  "name": "基座反向（qScale=-1）",
+  "mechanismId": "4dof-arm",
+  "mounts": [
+    { "componentId": "sv_base", "jointId": "j_base", "kind": "servo", "qScale": -1 },
+    { "componentId": "sv_shld", "jointId": "j_shld", "kind": "servo" },
+    { "componentId": "sv_elbw", "jointId": "j_elbw", "kind": "servo" },
+    { "componentId": "sv_grip", "jointId": "j_grip", "kind": "servo" }
+  ]
+}

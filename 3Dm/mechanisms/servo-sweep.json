@@ -1,0 +1,23 @@
+{
+  "id": "servo-sweep",
+  "name": "单舵机扫摆",
+  "kind": "serial",
+  "links": [
+    { "id": "world", "length": 0 },
+    { "id": "horn", "length": 0.06, "radius": 0.012, "color": "#94a3b8" }
+  ],
+  "joints": [
+    {
+      "id": "j_servo",
+      "name": "舵机",
+      "type": "revolute",
+      "parent": "world",
+      "child": "horn",
+      "origin": { "xyz": [0, 0, 0.02], "rpy": [0, 0, 0] },
+      "axis": [0, 0, 1],
+      "componentId": "*",
+      "qOffsetDeg": 0,
+      "qScale": 1
+    }
+  ]
+}

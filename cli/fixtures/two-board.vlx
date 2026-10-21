@@ -1,0 +1,31 @@
+{
+  "format": "velxio-project",
+  "version": 1,
+  "exportedAt": "2026-09-16T00:00:00.000Z",
+  "name": "two-board",
+  "boards": [
+    {
+      "id": "arduino-uno",
+      "boardKind": "arduino-uno",
+      "x": 40,
+      "y": 80,
+      "activeFileGroupId": "group-arduino-uno",
+      "languageMode": "arduino"
+    },
+    {
+      "id": "esp32",
+      "boardKind": "esp32",
+      "x": 400,
+      "y": 80,
+      "activeFileGroupId": "group-esp32",
+      "languageMode": "arduino"
+    }
+  ],
+  "fileGroups": {
+    "group-arduino-uno": [{ "name": "sketch.ino", "content": "// uno\n" }],
+    "group-esp32": [{ "name": "sketch.ino", "content": "// esp\n" }]
+  },
+  "components": [],
+  "wires": [],
+  "activeBoardId": "arduino-uno"
+}

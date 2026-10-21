@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TSX="$ROOT/node_modules/.bin/tsx"
+if [[ ! -x "$TSX" ]]; then
+  TSX="$ROOT/../node_modules/.bin/tsx"
+fi
+if [[ ! -x "$TSX" ]]; then
+  echo "velxio: tsx not found. Run: cd cli && npm install" >&2
+  exit 1
+fi
+RAW="$ROOT/src/register-vite-raw.mjs"
+# file:// URI so paths with spaces (e.g. "11 IOT") survive NODE_OPTIONS splitting
+RAW_URI="$(python3 -c 'from pathlib import Path; print(Path(r"""'"$RAW"'""").resolve().as_uri())')"
+case "${NODE_OPTIONS:-}" in
+  *register-vite-raw*) ;;
+  *) export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--import ${RAW_URI}" ;;
+esac
+exec "$TSX" --tsconfig "$ROOT/tsconfig.json" "$ROOT/src/cli.ts" "$@"

@@ -1,0 +1,22 @@
+{
+  "name": "velxio-cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Velxio 标准 CLI：元件、电路 .vlx、Kit、VAP、探活、编译与 SPICE",
+  "type": "module",
+  "bin": {
+    "velxio": "./bin/velxio"
+  },
+  "scripts": {
+    "velxio": "node --import ./src/register-vite-raw.mjs ./node_modules/tsx/dist/cli.mjs --tsconfig tsconfig.json src/cli.ts",
+    "verify": "bash scripts/verify.sh"
+  },
+  "dependencies": {
+    "commander": "^14.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
+  }
+}

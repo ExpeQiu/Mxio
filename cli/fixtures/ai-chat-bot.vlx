@@ -1,0 +1,330 @@
+{
+  "format": "velxio-project",
+  "version": 1,
+  "exportedAt": "2026-08-18T12:48:59.304Z",
+  "name": "ESP32: AI 对话机器人（Mock 优先）",
+  "boards": [
+    {
+      "id": "esp32",
+      "boardKind": "esp32",
+      "x": 80,
+      "y": 80,
+      "activeFileGroupId": "group-esp32",
+      "libraries": []
+    }
+  ],
+  "fileGroups": {
+    "group-esp32": [
+      {
+        "name": "sketch.ino",
+        "content": "// ESP32 — AI 对话机器人（Velxio 仿真 / 真机同一状态机）\n// 按键 GPIO4 进入 LISTEN；Serial 一行 = 听到的话；GPIO34 麦峰值作能量门。\n// OLED 用 Wire 直驱 SSD1306（不依赖 Adafruit，避开本机 AVR 版库的 util/delay.h）。\n// 默认 Mock：板内回复。Serial 输入 MODE live 后走 WiFi HTTP（OpenAI 兼容）。\n// 日志字段：turn_id / state / mock，便于排查。\n\n#include <Wire.h>\n#include <WiFi.h>\n#include <HTTPClient.h>\n\n#ifndef AI_MOCK_MODE\n#define AI_MOCK_MODE 1\n#endif\n\n#define PIN_SDA 21\n#define PIN_SCL 22\n#define PIN_BTN 4\n#define PIN_LED 2\n#define PIN_BUZ 15\n#define PIN_MIC 34\n\n#define OLED_ADDR 0x3C\n#define MIC_DELTA 500\n#define LISTEN_MS 8000\n#define DEBOUNCE_MS 40\n\nbool oledOk = false;\nbool gMock = AI_MOCK_MODE != 0;\nint turnId = 0;\nint lastBtn = HIGH;\nunsigned long btnAt = 0;\n\nString wifiSsid = \"Velxio-GUEST\";\nString llmUrl = \"http://192.168.4.2/v1/chat/completions\";\nString llmKey = \"\";\n\nenum State { ST_IDLE, ST_LISTEN, ST_THINK, ST_SPEAK };\nconst char* stateName[] = {\"IDLE\", \"LISTEN\", \"THINK\", \"SPEAK\"};\n\n// 5x7：0-9 A-Z 空格 / : - ?   LSB 在上。OLED 只显示 ASCII。\nstatic const uint8_t FONT5[][5] = {\n  {0x3E,0x51,0x49,0x45,0x3E},{0x00,0x42,0x7F,0x40,0x00},{0x42,0x61,0x51,0x49,0x46},\n  {0x21,0x41,0x45,0x4B,0x31},{0x18,0x14,0x12,0x7F,0x10},{0x27,0x45,0x45,0x45,0x39},\n  {0x3C,0x4A,0x49,0x49,0x30},{0x01,0x71,0x09,0x05,0x03},{0x36,0x49,0x49,0x49,0x36},\n  {0x06,0x49,0x49,0x29,0x1E},{0x7E,0x11,0x11,0x11,0x7E},{0x7F,0x49,0x49,0x49,0x36},\n  {0x3E,0x41,0x41,0x41,0x22},{0x7F,0x41,0x41,0x22,0x1C},{0x7F,0x49,0x49,0x49,0x41},\n  {0x7F,0x09,0x09,0x09,0x01},{0x3E,0x41,0x49,0x49,0x7A},{0x7F,0x08,0x08,0x08,0x7F},\n  {0x00,0x41,0x7F,0x41,0x00},{0x20,0x40,0x41,0x3F,0x01},{0x7F,0x08,0x14,0x22,0x41},\n  {0x7F,0x40,0x40,0x40,0x40},{0x7F,0x02,0x0C,0x02,0x7F},{0x7F,0x04,0x08,0x10,0x7F},\n  {0x3E,0x41,0x41,0x41,0x3E},{0x7F,0x09,0x09,0x09,0x06},{0x3E,0x41,0x51,0x21,0x5E},\n  {0x7F,0x09,0x19,0x29,0x46},{0x46,0x49,0x49,0x49,0x31},{0x01,0x01,0x7F,0x01,0x01},\n  {0x3F,0x40,0x40,0x40,0x3F},{0x1F,0x20,0x40,0x20,0x1F},{0x3F,0x40,0x38,0x40,0x3F},\n  {0x63,0x14,0x08,0x14,0x63},{0x07,0x08,0x70,0x08,0x07},{0x61,0x51,0x49,0x45,0x43},\n  {0x00,0x00,0x00,0x00,0x00},{0x00,0x41,0x22,0x14,0x08},{0x00,0x36,0x36,0x00,0x00},\n  {0x08,0x08,0x08,0x08,0x08},{0x02,0x01,0x51,0x09,0x06},\n};\n\nint fontIndex(char c) {\n  if (c >= 'a' && c <= 'z') c = (char)(c - 32);\n  if (c >= '0' && c <= '9') return c - '0';\n  if (c >= 'A' && c <= 'Z') return 10 + (c - 'A');\n  if (c == ' ') return 36;\n  if (c == '/') return 37;\n  if (c == ':') return 38;\n  if (c == '-') return 39;\n  return 40;\n}\n\nvoid oledCmd(uint8_t c) {\n  Wire.beginTransmission(OLED_ADDR);\n  Wire.write(0x00);\n  Wire.write(c);\n  Wire.endTransmission();\n}\n\nvoid oledBytes(const uint8_t* d, int n) {\n  while (n > 0) {\n    int chunk = n > 16 ? 16 : n;\n    Wire.beginTransmission(OLED_ADDR);\n    Wire.write(0x40);\n    for (int i = 0; i < chunk; i++) Wire.write(d[i]);\n    Wire.endTransmission();\n    d += chunk;\n    n -= chunk;\n  }\n}\n\nvoid oledPos(uint8_t col, uint8_t page) {\n  oledCmd(0x21); oledCmd(col); oledCmd(127);\n  oledCmd(0x22); oledCmd(page); oledCmd(7);\n}\n\nbool oledBegin() {\n  Wire.beginTransmission(OLED_ADDR);\n  if (Wire.endTransmission() != 0) return false;\n  const uint8_t init[] = {\n    0xAE, 0x20, 0x00, 0x40, 0xA1, 0xA8, 0x3F, 0xC8,\n    0xD3, 0x00, 0xDA, 0x12, 0xD5, 0x80, 0xD9, 0xF1,\n    0xDB, 0x30, 0x81, 0xFF, 0xA4, 0xA6, 0x8D, 0x14, 0xAF,\n  };\n  for (uint8_t c : init) oledCmd(c);\n  return true;\n}\n\nvoid oledClear() {\n  oledPos(0, 0);\n  uint8_t z[16] = {0};\n  for (int i = 0; i < 64; i++) oledBytes(z, 16);\n}\n\nvoid oledPrint(uint8_t col, uint8_t page, const char* s) {\n  oledPos(col, page);\n  while (*s && col <= 122) {\n    const uint8_t* g = FONT5[fontIndex(*s++)];\n    uint8_t cell[6] = {g[0], g[1], g[2], g[3], g[4], 0};\n    oledBytes(cell, 6);\n    col += 6;\n  }\n}\n\nvoid oledShow(const char* line1, const char* line2, const char* line3) {\n  if (!oledOk) return;\n  oledClear();\n  oledPrint(0, 0, \"VELXIO CHAT\");\n  oledPrint(0, 2, line1);\n  oledPrint(0, 4, line2);\n  oledPrint(0, 6, line3);\n}\n\nvoid logChat(const char* msg) {\n  Serial.printf(\"[chat] turn_id=%d mock=%d %s\\n\", turnId, gMock ? 1 : 0, msg);\n}\n\nvoid logState(State st, const char* extra) {\n  Serial.printf(\"[chat] turn_id=%d state=%s mock=%d %s\\n\",\n                turnId, stateName[st], gMock ? 1 : 0, extra);\n}\n\nvoid setLed(bool on) { digitalWrite(PIN_LED, on ? HIGH : LOW); }\n\nvoid speakBeep(int n) {\n  for (int i = 0; i < n; i++) {\n    digitalWrite(PIN_BUZ, HIGH);\n    delay(45);\n    digitalWrite(PIN_BUZ, LOW);\n    delay(45);\n  }\n}\n\nString mockReply(const String& q) {\n  String s = q;\n  s.toLowerCase();\n  if (s.indexOf(\"hello\") >= 0 || s.indexOf(\"你好\") >= 0) {\n    return \"你好，我是 Velxio 对话机器人。\";\n  }\n  if (s.indexOf(\"name\") >= 0 || s.indexOf(\"名字\") >= 0) {\n    return \"我叫 Velxio Bot，跑在 ESP32 上。\";\n  }\n  if (s.indexOf(\"weather\") >= 0 || s.indexOf(\"天气\") >= 0) {\n    return \"仿真里没有气象站，我们先聊天。\";\n  }\n  if (s.indexOf(\"help\") >= 0 || s.indexOf(\"帮助\") >= 0) {\n    return \"按键说话，或在 Serial 打一行。MODE live 走云端。\";\n  }\n  String out = \"收到: \";\n  out += q;\n  out += \" (mock)\";\n  return out;\n}\n\nString liveReply(const String& q) {\n  if (WiFi.status() != WL_CONNECTED) {\n    WiFi.mode(WIFI_STA);\n    WiFi.begin(wifiSsid.c_str());\n    unsigned long t0 = millis();\n    while (WiFi.status() != WL_CONNECTED && millis() - t0 < 8000) delay(200);\n    if (WiFi.status() != WL_CONNECTED) return \"WiFi 未连接，回退 mock。\";\n  }\n  HTTPClient http;\n  http.begin(llmUrl);\n  http.addHeader(\"Content-Type\", \"application/json\");\n  if (llmKey.length()) {\n    http.addHeader(\"Authorization\", String(\"Bearer \") + llmKey);\n  }\n  String body = \"{\\\"model\\\":\\\"mock\\\",\\\"messages\\\":[{\\\"role\\\":\\\"user\\\",\\\"content\\\":\\\"\";\n  String esc = q;\n  esc.replace(\"\\\\\", \"\\\\\\\\\");\n  esc.replace(\"\\\"\", \"\\\\\\\"\");\n  body += esc;\n  body += \"\\\"}]}\";\n  int code = http.POST(body);\n  String resp = http.getString();\n  http.end();\n  Serial.printf(\"[chat] turn_id=%d http=%d bytes=%u\\n\", turnId, code, (unsigned)resp.length());\n  int i = resp.indexOf(\"\\\"content\\\"\");\n  if (i < 0) return code == 200 ? resp.substring(0, 48) : String(\"HTTP \") + code;\n  int colon = resp.indexOf(':', i);\n  int q1 = resp.indexOf('\"', colon + 1);\n  int q2 = resp.indexOf('\"', q1 + 1);\n  if (q1 < 0 || q2 < 0) return \"解析失败\";\n  return resp.substring(q1 + 1, q2);\n}\n\nvoid trimLine(String& s) {\n  s.trim();\n  while (s.endsWith(\"\\r\")) s.remove(s.length() - 1);\n}\n\nbool handleCmd(const String& line) {\n  if (line.equalsIgnoreCase(\"HELP\")) {\n    Serial.println(\"[chat] SAY <text> | MODE mock|live | SSID <s> | URL <u> | KEY <k>\");\n    return true;\n  }\n  if (line.startsWith(\"MODE \")) {\n    String m = line.substring(5);\n    m.trim();\n    gMock = !m.equalsIgnoreCase(\"live\");\n    logChat(gMock ? \"mode=mock\" : \"mode=live\");\n    return true;\n  }\n  if (line.startsWith(\"SSID \")) { wifiSsid = line.substring(5); wifiSsid.trim(); return true; }\n  if (line.startsWith(\"URL \")) { llmUrl = line.substring(4); llmUrl.trim(); return true; }\n  if (line.startsWith(\"KEY \")) { llmKey = line.substring(4); llmKey.trim(); return true; }\n  if (line.startsWith(\"SAY \")) { return false; }\n  return false;\n}\n\nString utteranceFrom(const String& line) {\n  if (line.startsWith(\"SAY \")) {\n    String u = line.substring(4);\n    u.trim();\n    return u;\n  }\n  return line;\n}\n\nvoid doTurn(const String& utter) {\n  turnId++;\n  if (utter.length() == 0) {\n    logState(ST_IDLE, \"empty\");\n    return;\n  }\n  logState(ST_THINK, utter.c_str());\n  setLed(true);\n  oledShow(\"THINK\", utter.c_str(), gMock ? \"mock\" : \"live\");\n  delay(80);\n  String ans = gMock ? mockReply(utter) : liveReply(utter);\n  logState(ST_SPEAK, ans.c_str());\n  oledShow(\"SPEAK\", ans.c_str(), \"\");\n  speakBeep(3 + (int)(ans.length() % 4));\n  setLed(false);\n  oledShow(\"IDLE\", gMock ? \"mock\" : \"live\", \"btn / serial\");\n  logState(ST_IDLE, \"done\");\n}\n\nvoid setup() {\n  Serial.begin(115200);\n  delay(200);\n  pinMode(PIN_BTN, INPUT_PULLUP);\n  pinMode(PIN_LED, OUTPUT);\n  pinMode(PIN_BUZ, OUTPUT);\n  pinMode(PIN_MIC, INPUT);\n  digitalWrite(PIN_LED, LOW);\n  digitalWrite(PIN_BUZ, LOW);\n\n  Wire.begin(PIN_SDA, PIN_SCL);\n  oledOk = oledBegin();\n  if (!oledOk) Serial.println(\"[chat] oled=fail (serial-only)\");\n  else Serial.println(\"[chat] oled=ok\");\n\n  oledShow(\"IDLE\", gMock ? \"mock\" : \"live\", \"btn / serial\");\n  Serial.println(\"[chat] ready  mock=1  type HELP  or press GPIO4\");\n}\n\nvoid loop() {\n  unsigned long now = millis();\n  int btn = digitalRead(PIN_BTN);\n  if (btn != lastBtn && now - btnAt > DEBOUNCE_MS) {\n    btnAt = now;\n    lastBtn = btn;\n    if (btn == LOW) {\n      logState(ST_LISTEN, \"button\");\n      setLed(true);\n      oledShow(\"LISTEN\", \"speak / serial\", \"\");\n      unsigned long t0 = millis();\n      bool heardPeak = false;\n      int micBase = analogRead(PIN_MIC);\n      String line = \"\";\n      while (millis() - t0 < LISTEN_MS) {\n        int mic = analogRead(PIN_MIC);\n        if (mic > micBase + MIC_DELTA) heardPeak = true;\n        if (Serial.available()) {\n          line = Serial.readStringUntil('\\n');\n          trimLine(line);\n          break;\n        }\n        delay(20);\n      }\n      setLed(false);\n      if (line.length() && !handleCmd(line)) {\n        doTurn(utteranceFrom(line));\n      } else if (heardPeak) {\n        doTurn(\"(sound)\");\n      } else {\n        logState(ST_IDLE, \"listen_timeout\");\n        oledShow(\"IDLE\", \"timeout\", \"btn / serial\");\n      }\n    }\n  }\n\n  if (Serial.available()) {\n    String line = Serial.readStringUntil('\\n');\n    trimLine(line);\n    if (!line.length()) return;\n    if (handleCmd(line)) return;\n    doTurn(utteranceFrom(line));\n  }\n}\n"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "oled",
+      "metadataId": "ssd1306-i2c-4pin",
+      "x": 420,
+      "y": 40,
+      "properties": {}
+    },
+    {
+      "id": "btn",
+      "metadataId": "pushbutton",
+      "x": 420,
+      "y": 180,
+      "properties": {
+        "color": "green",
+        "label": "说话"
+      }
+    },
+    {
+      "id": "ledok",
+      "metadataId": "led",
+      "x": 40,
+      "y": 280,
+      "properties": {
+        "color": "blue"
+      }
+    },
+    {
+      "id": "rled",
+      "metadataId": "resistor",
+      "x": 40,
+      "y": 210,
+      "properties": {
+        "value": "220"
+      }
+    },
+    {
+      "id": "buz",
+      "metadataId": "buzzer",
+      "x": 560,
+      "y": 180,
+      "properties": {}
+    },
+    {
+      "id": "mic",
+      "metadataId": "big-sound-sensor",
+      "x": 560,
+      "y": 40,
+      "properties": {}
+    }
+  ],
+  "wires": [
+    {
+      "id": "w_oled_vcc",
+      "start": {
+        "componentId": "esp32",
+        "pinName": "3V3",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "oled",
+        "pinName": "VCC",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#ef4444",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_oled_gnd",
+      "start": {
+        "componentId": "esp32",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "oled",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#111111",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_oled_sda",
+      "start": {
+        "componentId": "esp32",
+        "pinName": "21",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "oled",
+        "pinName": "SDA",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#38bdf8",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_oled_scl",
+      "start": {
+        "componentId": "esp32",
+        "pinName": "22",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "oled",
+        "pinName": "SCL",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#f97316",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_btn_gpio",
+      "start": {
+        "componentId": "esp32",
+        "pinName": "4",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "btn",
+        "pinName": "1.l",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#22c55e",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_btn_gnd",
+      "start": {
+        "componentId": "btn",
+        "pinName": "2.l",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "esp32",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#111111",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_led_gpio",
+      "start": {
+        "componentId": "esp32",
+        "pinName": "2",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "rled",
+        "pinName": "1",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#60a5fa",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_led_r",
+      "start": {
+        "componentId": "rled",
+        "pinName": "2",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "ledok",
+        "pinName": "A",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#60a5fa",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_led_gnd",
+      "start": {
+        "componentId": "ledok",
+        "pinName": "C",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "esp32",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#111111",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_buz_sig",
+      "start": {
+        "componentId": "esp32",
+        "pinName": "15",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "buz",
+        "pinName": "1",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#a855f7",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_buz_gnd",
+      "start": {
+        "componentId": "buz",
+        "pinName": "2",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "esp32",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#111111",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_mic_vcc",
+      "start": {
+        "componentId": "esp32",
+        "pinName": "3V3",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "mic",
+        "pinName": "VCC",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#ef4444",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_mic_gnd",
+      "start": {
+        "componentId": "mic",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "esp32",
+        "pinName": "GND",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#111111",
+      "waypoints": [],
+      "autoRouted": true
+    },
+    {
+      "id": "w_mic_aout",
+      "start": {
+        "componentId": "mic",
+        "pinName": "AOUT",
+        "x": 0,
+        "y": 0
+      },
+      "end": {
+        "componentId": "esp32",
+        "pinName": "34",
+        "x": 0,
+        "y": 0
+      },
+      "color": "#eab308",
+      "waypoints": [],
+      "autoRouted": true
+    }
+  ],
+  "activeBoardId": "esp32"
+}

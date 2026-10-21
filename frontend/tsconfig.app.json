@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "types": ["vite/client"],
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true,
+    "paths": {
+      "@velxio/*": ["./src/*"],
+      "@apps": ["../AppS/web/index.ts"],
+      "@apps/*": ["../AppS/web/*"],
+      "@center": ["../center/web/index.ts"],
+      "@center/*": ["../center/web/*"],
+      "@3dm/*": ["../3Dm/src/*"]
+    }
+  },
+  "include": ["src", "../AppS/web", "../center/web", "../3Dm/src/core/kit.ts", "../3Dm/src/core/log.ts", "../3Dm/src/core/types.ts", "../3Dm/src/core/generate.ts"]
+}
