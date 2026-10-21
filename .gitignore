@@ -43,6 +43,7 @@ third-party/
 # Build outputs
 frontend/dist/
 frontend/.vite/
+.vite/
 backend/dist/
 
 # Local-dev junctions to a private overlay repo (e.g. velxio-prod). Created
